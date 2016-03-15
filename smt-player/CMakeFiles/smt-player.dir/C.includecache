@@ -1,0 +1,16 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/chenchuantao/Develop/smt-player/smt_player.c
+libavformat/avformat.h
+-
+smt_common.h
+/home/chenchuantao/Develop/smt-player/smt_common.h
+
+include/smt_common.h
+
