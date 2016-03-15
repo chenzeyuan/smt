@@ -38,6 +38,9 @@ void ff_rtp_send_aac(AVFormatContext *s1, const uint8_t *buff, int size)
         buff += 7;
     }
 
+    if(size < 0)
+        return;
+
     /* test if the packet must be sent */
     len = (s->buf_ptr - s->buf);
     if (s->num_frames &&

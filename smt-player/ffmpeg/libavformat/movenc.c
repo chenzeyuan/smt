@@ -4645,7 +4645,6 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     unsigned int samples_in_chunk = 0;
     int size = pkt->size, ret = 0;
     uint8_t *reformatted_data = NULL;
-
     if (trk->entry) {
         int64_t duration = pkt->dts - trk->cluster[trk->entry - 1].dts;
         if (duration < 0 || duration > INT_MAX) {

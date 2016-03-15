@@ -3470,11 +3470,13 @@ static void event_loop(VideoState *cur_stream)
         case SDL_VIDEOEXPOSE:
             cur_stream->force_refresh = 1;
             break;
+/*
         case SDL_MOUSEBUTTONDOWN:
             if (exit_on_mousedown) {
                 do_exit(cur_stream);
                 break;
             }
+            break;
         case SDL_MOUSEMOTION:
             if (cursor_hidden) {
                 SDL_ShowCursor(1);
@@ -3513,6 +3515,7 @@ static void event_loop(VideoState *cur_stream)
                     stream_seek(cur_stream, ts, 0, 0);
                 }
             break;
+*/
         case SDL_VIDEORESIZE:
                 screen = SDL_SetVideoMode(FFMIN(16383, event.resize.w), event.resize.h, 0,
                                           SDL_HWSURFACE|(is_full_screen?SDL_FULLSCREEN:SDL_RESIZABLE)|SDL_ASYNCBLIT|SDL_HWACCEL);
