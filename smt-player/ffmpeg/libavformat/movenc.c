@@ -4519,6 +4519,9 @@ static int mov_flush_mpu_fragment(AVFormatContext *s, int force)
             av_dict_set(&options, "smt_payload_size", NULL, AV_DICT_MATCH_CASE);
             mov->moov_written = 1;
             mov->mmpu_written = 0;
+            if (track->entry)
+                track->frag_start += track->start_dts + track->track_duration - track->cluster[0].dts;
+
         }
         if (mov->frag_interleave) {
             int ret;
@@ -4645,6 +4648,7 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     unsigned int samples_in_chunk = 0;
     int size = pkt->size, ret = 0;
     uint8_t *reformatted_data = NULL;
+
     if (trk->entry) {
         int64_t duration = pkt->dts - trk->cluster[trk->entry - 1].dts;
         if (duration < 0 || duration > INT_MAX) {

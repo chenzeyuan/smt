@@ -468,6 +468,14 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
 
 	if(ret == SMT_STATUS_OK){
 		av_assert0(process_position <= packet_buffer_data_len);
+#ifdef FIXED_UDP_LEN
+        if(process_position < packet_buffer_data_len)
+            while(!*(packet_buffer+process_position)){
+                process_position++;
+                if(process_position == packet_buffer_data_len)
+                    break;
+            }
+#endif
 		has_more_data = packet_buffer_data_len - process_position;
 		if(has_more_data){
 			packet_parser_status = SMT_STATUS_HAS_MORE_DATA;
@@ -872,7 +880,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_packet *p)
 #ifdef SMT_DUMP
                     char fn[256];
                     memset(fn, 0, 256);
-                    sprintf(fn, "mpu_%d_%s.mpu", pld_f->MPU_sequence_number, asset_id?"v":"a");
+                    sprintf(fn, "../../../../Temp/mpu_%d_%s.mpu", pld_f->MPU_sequence_number, asset_id?"v":"a");
                     avformat_dump(fn, mpu->mpu_header_data, mpu->mpu_header_length, "a+");
                     avformat_dump(fn, mpu->moof_header_data, mpu->moof_header_length, "a+");
                     avformat_dump(fn, mpu->sample_data, mpu->sample_length, "a+");
@@ -1220,7 +1228,11 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
         memcpy(pld->data + offset, buffer + position, pld->data_len);
 
         //send data
+#ifdef FIXED_UDP_LEN
+        if(0 > smt_callback_entity.packet_send(h, pld->data, MTU)){
+#else
         if(0 > smt_callback_entity.packet_send(h, pld->data, pld->data_len + offset)){
+#endif
             av_log(h, AV_LOG_ERROR, "send smt packet failed.\n");
             status = SMT_STATUS_ERROR;
             break;

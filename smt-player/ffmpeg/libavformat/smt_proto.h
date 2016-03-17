@@ -21,6 +21,8 @@
 #define MEDIA_TRACK_ID_OFFSET 1
 #define BUFFER_TIME 1000
 
+#define FIXED_UDP_LEN
+
 
 
 typedef enum fec_type{

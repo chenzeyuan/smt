@@ -548,6 +548,7 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
     SMTContext *s = h->priv_data;
     int avail, space;
     int ret;
+    //avformat_dump("../../../../Temp/snd_mpu_seq.data", buf, size, "a+");
     if(!s->cache){
         ret = smt_pack_mpu(h, buf, size);
         if(ret == SMT_STATUS_NEED_MORE_DATA){
