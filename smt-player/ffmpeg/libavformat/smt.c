@@ -68,6 +68,7 @@ typedef struct SMTContext {
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     pthread_t mpu_generate_thread;
+    bool generate_thread_run;
     bool hflag;
     int stream_index;
     int audio_head_available, video_head_available;
@@ -158,7 +159,7 @@ static void *smt_mpu_generate_task( void *_URLContext)
 {
     URLContext *h = (URLContext *)_URLContext;
     SMTContext *s = h->priv_data;
-    while(1){
+    while(s->generate_thread_run){
         unsigned char buf[MTU];
         int len;
         memset(buf, 0, MTU);
@@ -487,6 +488,7 @@ static int smt_open(URLContext *h, const char *uri, int flags)
         goto cond_fail;
     }
 
+    s->generate_thread_run = 1;
     ret = pthread_create(&s->mpu_generate_thread, NULL, smt_mpu_generate_task, h);
     if (ret != 0) {
         av_log(h, AV_LOG_ERROR, "pthread_create failed : %s\n", strerror(ret));
@@ -572,13 +574,16 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
 
 static int smt_close(URLContext *h)
 {
+    int ret;
     SMTContext *s = h->priv_data;
     if (s->is_multicast) 
         smt_leave_multicast_group(s->smt_fd, (struct sockaddr *)&s->dest_addr,(struct sockaddr *)&s->local_addr_storage);
     closesocket(s->smt_fd);
 
-    int ret;
+    s->generate_thread_run = 0;
+#ifndef SMT_ANDROID
     pthread_cancel(s->mpu_generate_thread);
+#endif
     ret = pthread_join(s->mpu_generate_thread, NULL);
     if (ret != 0)
         av_log(h, AV_LOG_ERROR, "pthread_join(): %s\n", strerror(ret));
