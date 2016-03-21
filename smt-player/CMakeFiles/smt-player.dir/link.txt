@@ -1,1 +1,0 @@
-/usr/bin/cc      CMakeFiles/smt-player.dir/smt_player.c.o  -o smt-player  -L/home/chenchuantao/Develop/smt-player/lib -rdynamic -lswresample -lavcodec -lavutil -lavformat -lavfilter -lswscale -lavdevice -Wl,-rpath,/home/chenchuantao/Develop/smt-player/lib 
