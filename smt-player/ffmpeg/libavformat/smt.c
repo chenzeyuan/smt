@@ -591,11 +591,11 @@ static int smt_close(URLContext *h)
     pthread_cond_destroy(&s->cond);
     
     if(s->head)
-        av_fifo_free(s->head);
+        av_fifo_freep(&s->head);
     if(s->fifo)
-        av_fifo_free(s->fifo);
+        av_fifo_freep(&s->fifo);
     if(s->cache)
-        av_fifo_free(s->cache);
+        av_fifo_freep(&s->cache);
     return 0;
 }
 
@@ -631,18 +631,17 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
         int avail = av_fifo_size(s->cache);
         pthread_mutex_lock(&s->mutex);
         if(avail > 0){
-            unsigned char* buf = (unsigned char *)malloc(avail);
+            unsigned char* buf = (unsigned char *)av_mallocz(avail);
             av_fifo_generic_read(s->cache, buf, avail, NULL);
             status = smt_pack_mpu(h, buf, avail);
             if(SMT_STATUS_OK != status){
                   av_fifo_generic_write(s->cache, buf, avail, NULL); 
             }
-            free(buf);
+            av_freep(&buf);
         }
-        if(SMT_STATUS_OK == status){
-            av_fifo_free(s->cache);
-            s->cache = NULL;
-        }
+        if(SMT_STATUS_OK == status)
+            av_fifo_freep(&s->cache);
+
         pthread_mutex_unlock(&s->mutex);
     }
     return 0;

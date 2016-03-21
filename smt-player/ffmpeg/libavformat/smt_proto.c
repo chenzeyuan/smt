@@ -85,8 +85,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
         }
         if(payload->A){
             data_len = payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2;
-            payload->data = (unsigned char*)malloc(data_len);
-            memset(payload->data, 0, data_len);
+            payload->data = (unsigned char*)av_mallocz(data_len);
             while(data_len > 0){
                 payload->DU_length[aggregation_du_index] = ((buffer+offset)[0] << 8) | (buffer+offset)[1];
                 offset += 2;
@@ -124,8 +123,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
             }else
             	data_len = payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2;
             
-            payload->data = (unsigned char*)malloc(data_len);
-            memset(payload->data, 0, data_len);
+            payload->data = (unsigned char*)av_mallocz(data_len);
             memcpy(payload->data, buffer + offset, data_len);
             offset += data_len;
             payload->data_len = data_len;
@@ -156,8 +154,7 @@ static smt_status smt_parse_gfd_payload(URLContext *h, unsigned char* buffer, un
         packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
     }
     if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
-        payload->data = (unsigned char*)malloc(size - SMT_PARSE_PAYLOAD_HEADER); // smt protocol has some problem for GFD mode. If length of sending packet is more than MTU, we have no way to get real length of payload data.
-        memset(payload->data, 0, size - SMT_PARSE_PAYLOAD_HEADER);
+        payload->data = (unsigned char*)av_mallocz(size - SMT_PARSE_PAYLOAD_HEADER); // smt protocol has some problem for GFD mode. If length of sending packet is more than MTU, we have no way to get real length of payload data.
         memcpy(payload->data, buffer + SMT_PARSE_PAYLOAD_HEADER, size - SMT_PARSE_PAYLOAD_HEADER);
         process_position += (size - SMT_PARSE_PAYLOAD_HEADER);
     }
@@ -216,7 +213,7 @@ static smt_status smt_parse_sig_payload(URLContext *h, unsigned char* buffer, in
                         offset += 1;
                     }
                     data_len += payload->MSG_length;
-                    payload->data = (unsigned char*)realloc(payload->data, data_len);
+                    payload->data = (unsigned char*)av_realloc(payload->data, data_len);
                     if(!payload->data){
                         av_log(h, AV_LOG_FATAL, "can not realloc memory for signaling message!");
                         packet_parser_status = SMT_STATUS_INIT;
@@ -228,8 +225,7 @@ static smt_status smt_parse_sig_payload(URLContext *h, unsigned char* buffer, in
                     offset += data_len;
                 }else{
                     payload->data_len = size - offset;
-                    payload->data = (unsigned char*)malloc(size - offset);
-                    memset(payload->data, 0, payload->data_len);
+                    payload->data = (unsigned char*)av_mallocz(size - offset);
                     memset(payload->data, buffer+offset, payload->data_len);
 					process_position += payload->data_len;
                     offset += payload->data_len;
@@ -267,8 +263,7 @@ static smt_status smt_parse_repair_payload(URLContext *h, unsigned char* buffer,
             need_more_data = MTU + 4 - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
-        payload->data = (unsigned char *)malloc(MTU);
-        memset(payload->data, 0, MTU);
+        payload->data = (unsigned char *)av_mallocz(MTU);
         memcpy(payload->data, buffer + offset, MTU);
 		process_position += MTU;
         offset += MTU;
@@ -296,8 +291,7 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
     do{
         switch(packet_parser_status){
             case SMT_STATUS_INIT:{
-                packet_buffer = (unsigned char *)malloc(size);
-                memset(packet_buffer, 0, size);
+                packet_buffer = (unsigned char *)av_mallocz(size);
                 memcpy(packet_buffer, buffer, size);
                 packet_buffer_data_len = size;
                 if(packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
@@ -311,7 +305,7 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
                 break;
             }
             case SMT_STATUS_NEED_MORE_DATA:{
-                packet_buffer = (unsigned char *)realloc(packet_buffer, packet_buffer_data_len + size);
+                packet_buffer = (unsigned char *)av_realloc(packet_buffer, packet_buffer_data_len + size);
                 memcpy(packet_buffer+packet_buffer_data_len, buffer, size);
                 packet_buffer_data_len += size;
                 if(size < need_more_data){
@@ -322,7 +316,7 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
                 break;
             }
             case SMT_STATUS_HAS_MORE_DATA:{
-                packet_buffer = (unsigned char *)realloc(packet_buffer, packet_buffer_data_len + size);
+                packet_buffer = (unsigned char *)av_realloc(packet_buffer, packet_buffer_data_len + size);
                 memcpy(packet_buffer+packet_buffer_data_len, buffer, size);
                 packet_buffer_data_len += size;
                 if(packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
@@ -480,13 +474,12 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
 		if(has_more_data){
 			packet_parser_status = SMT_STATUS_HAS_MORE_DATA;
 			memmove(packet_buffer, packet_buffer+process_position, has_more_data);
-			packet_buffer = (unsigned char *)realloc(packet_buffer, has_more_data);
+			packet_buffer = (unsigned char *)av_realloc(packet_buffer, has_more_data);
 			return SMT_STATUS_HAS_MORE_DATA;
 		}else{
 			packet_parse_phase = SMT_PARSE_NOT_START;
 			packet_parser_status = SMT_STATUS_INIT;
-			free(packet_buffer);
-			packet_buffer = NULL;
+			av_freep(&packet_buffer);
 		}
 	}else if(ret == SMT_STATUS_NEED_MORE_DATA){
 		has_more_data = 0;
@@ -637,10 +630,8 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 					// assmeble mpu header and moof header
 					int seq = mpu_head[asset_id]->packet_sequence_number;
 					smt_packet *it = mpu_head[asset_id];
-					mpu->mpu_header_data = (unsigned char *)malloc(mpu->mpu_header_length);
-					memset(mpu->mpu_header_data, 0, mpu->mpu_header_length);
-					mpu->moof_header_data = (unsigned char *)malloc(mpu->moof_header_length);
-					memset(mpu->moof_header_data, 0, mpu->moof_header_length);
+					mpu->mpu_header_data = (unsigned char *)av_mallocz(mpu->mpu_header_length);
+					mpu->moof_header_data = (unsigned char *)av_mallocz(mpu->moof_header_length);
 					
 					while(seq <= moov_head_pkt_last_seq){
 						smt_payload_mpu *pld = (smt_payload_mpu *)(&it->payload);
@@ -716,8 +707,7 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 					//prepare sample buffer
 					unsigned char *mdat_size = mpu->moof_header_data + (mpu->moof_header_length - 8);
 					mpu->sample_length = (mdat_size[0] << 24 | mdat_size[1] << 16 | mdat_size[2] << 8 | mdat_size[3]) - 8; //exclude mdat header
-					mpu->sample_data = (unsigned char *)malloc(mpu->sample_length);
-					memset(mpu->sample_data, 0, mpu->sample_length);
+					mpu->sample_data = (unsigned char *)av_mallocz(mpu->sample_length);
 				}
 
 				int trun_offset = smt_find_field(mpu->moof_header_data ,mpu->moof_header_length,"trun", 4);
@@ -751,7 +741,7 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 						memcpy(mpu->sample_data + data_offset, pld->data, sample_size); //copy from packet directly
 						iterator = iterator->next;
 					}else if(pld->f_i == first_fragment){
-						unsigned char *sample_buf = (unsigned char *)malloc(sample_size);
+						unsigned char *sample_buf = (unsigned char *)av_mallocz(sample_size);
 						int good_sample = 0;
 						int pos = 0;
 						do{
@@ -784,8 +774,7 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 							memcpy(mpu->sample_data + data_offset, sample_buf, sample_size);
                             //av_log(h, AV_LOG_INFO, "sample %d is a good sample, sample_size = %d\n",sample_index, sample_size);
 						}
-						free(sample_buf);
-                        sample_buf = NULL;
+						av_freep(&sample_buf);
 					}else{
 						int counter = 0;
 						while(pld->f_i != first_fragment && pld->f_i != complete_data){ //skip useless packets
@@ -825,35 +814,27 @@ static void smt_release_buffer(URLContext *h, int asset)
 		switch(iterator->type){
 			case mpu_payload:{
 				smt_payload_mpu *pld = (smt_payload_mpu *)(&iterator->payload);
-				if(pld->data){
-					free(pld->data);
-                    pld->data = NULL;
-                }
+				if(pld->data)
+					av_freep(&pld->data);
 				break;
 			}case gfd_payload:{
 				smt_payload_gfd *pld = (smt_payload_gfd *)(&iterator->payload);
-				if(pld->data){
-					free(pld->data);
-                    pld->data = NULL;
-                }
+				if(pld->data)
+					av_freep(&pld->data);
 				break;
 			}case sig_payload:{
 				smt_payload_sig *pld = (smt_payload_sig *)(&iterator->payload);
-				if(pld->data){
-					free(pld->data);
-                    pld->data = NULL;
-                }
+				if(pld->data)
+					av_freep(&pld->data);
 				break;
 			}case repair_symbol_payload:{
 				smt_payload_id *pld = (smt_payload_id *)(&iterator->payload);
-				if(pld->data){
-					free(pld->data);
-                    pld->data = NULL;
-                }
+				if(pld->data)
+					av_freep(&pld->data); 
 				break;
 			}
 		}
-		free(iterator);
+		av_freep(&iterator);
 		iterator = tmp;
 	}
 }
@@ -869,8 +850,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_packet *p)
         pld_f = (smt_payload_mpu *)&(mpu_head[asset_id]->payload);
         pld = (smt_payload_mpu *)&(p->payload);
         if(pld_f->MPU_sequence_number < pld->MPU_sequence_number){
-                smt_mpu *mpu = (smt_mpu *)malloc(sizeof(smt_mpu));
-                memset(mpu, 0, sizeof(smt_mpu));
+                smt_mpu *mpu = (smt_mpu *)av_mallocz(sizeof(smt_mpu));
                 mpu->asset = asset_id;
                 mpu->sequnce = pld_f->MPU_sequence_number;
                 ret = smt_assemble_mpu(h,asset_id, mpu);
@@ -1039,8 +1019,7 @@ smt_status smt_parse(URLContext *h, unsigned char* buffer, int *p_size)
         else
             packet_buffer_data_len = 0;
         process_position = 0;
-        packet = (smt_packet *)malloc(sizeof(smt_packet));
-        memset(packet, 0, sizeof(smt_packet));
+        packet = (smt_packet *)av_mallocz(sizeof(smt_packet));
     }
     
     status = smt_parse_packet(h, buffer, size, packet);
@@ -1079,11 +1058,10 @@ smt_status smt_parse(URLContext *h, unsigned char* buffer, int *p_size)
                     }    
                 }
             }
-            if(payload_data){
-                free(payload_data);
-                payload_data = NULL;
-            }
-            free(packet);
+            if(payload_data)
+                av_freep(&payload_data);
+
+            av_freep(&packet);
             break;
     }
     return status;
@@ -1094,18 +1072,15 @@ void smt_release_mpu(URLContext *h, smt_mpu *mpu)
     //int i = 0;
     if(!mpu)
         return;
-    if(mpu->mpu_header_data){
-        free(mpu->mpu_header_data);
-        mpu->mpu_header_data = NULL;
-    }
-    if(mpu->moof_header_data){
-        free(mpu->moof_header_data);
-        mpu->moof_header_data = NULL;
-    }
-    if(mpu->sample_data){
-        free(mpu->sample_data);
-        mpu->sample_data = NULL;
-    }
+    if(mpu->mpu_header_data)
+        av_freep(&mpu->mpu_header_data);
+
+    if(mpu->moof_header_data)
+        av_freep(&mpu->moof_header_data);
+
+    if(mpu->sample_data)
+        av_freep(&mpu->sample_data);
+
 /*
     if(!mpu->sample)
         return;
@@ -1113,10 +1088,9 @@ void smt_release_mpu(URLContext *h, smt_mpu *mpu)
         if(mpu->sample[i].sample_data)
             free(mpu->sample[i].sample_data);
     }
-    free(mpu->sample);
+    av_freep(&mpu->sample);
 */
-    free(mpu);
-    mpu = NULL;
+    av_freep(&mpu);
 }
 
 
@@ -1124,28 +1098,13 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 {
 	unsigned char *tag = buffer+4;
 	int position = 0;
-	smt_packet *pkt = (smt_packet *)malloc(sizeof(smt_packet));
-    memset(pkt, 0, sizeof(smt_packet));
-	smt_payload_mpu *pld = (smt_payload_mpu *)&(pkt->payload);
+	smt_packet *pkt = NULL;
+	smt_payload_mpu *pld = NULL;
 	int size, offset = 0, ext = 0;
     smt_status status;
-	//initialization
-	pkt->V = 0;
-	pkt->C = 1;
-	pkt->FEC = no_fec;
-	pkt->r = 0;
-	pkt->X = 0;
-	pkt->R = 0;
-	pkt->RES = 0;
-	pkt->type = mpu_payload;	
-	pld->T = 1;
-	pld->A = 0;
-	pld->DU_Header[0].priority = 0;
-	pld->DU_Header[0].dep_counter = 0;
-	pld->data = (unsigned char *)malloc(MTU);
-
-	
-	int type = MKTAG(tag[0],tag[1],tag[2],tag[3]);    
+    smt_fragment_type FT = none;
+	int type = MKTAG(tag[0],tag[1],tag[2],tag[3]);
+    
 	if(type == MKTAG('f','t','y','p')){
 		int hdlr_offset, mmpu_offset;
 		unsigned char *hdlr, *mmpu;
@@ -1164,20 +1123,37 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 		mpu_seq[asset] = (mmpu + 0x0d)[0] << 24 | (mmpu + 0x0d)[1] << 16 | (mmpu + 0x0d)[2] << 8 | (mmpu + 0x0d)[3];
 		moof_index = -1;
 		sample_index = 0;
-		pld->FT = mpu_metadata;
+		FT = mpu_metadata;
 	}else if(type == MKTAG('m','o','o','f')){
 		moof_index++;
-		pld->FT = movie_fragment_metadata;
+		FT = movie_fragment_metadata;
 	}else{
 		sample_index++;
-		pld->FT = mfu;
+		FT = mfu;
 	}
 
-
-	pkt->packet_id = asset;
+	//initialization
+	pkt = (smt_packet *)av_mallocz(sizeof(smt_packet));
+	pkt->V = 0;
+	pkt->C = 1;
+	pkt->FEC = no_fec;
+	pkt->r = 0;
+	pkt->X = 0;
+	pkt->R = 0;
+	pkt->RES = 0;
+	pkt->type = mpu_payload;
+    pkt->packet_id = asset;
+    pld = (smt_payload_mpu *)&(pkt->payload);
+	pld->T = 1;
+	pld->A = 0;
+	pld->DU_Header[0].priority = 0;
+	pld->DU_Header[0].dep_counter = 0;
+    pld->data = (unsigned char *)av_mallocz(MTU);
 	pld->MPU_sequence_number = mpu_seq[asset];
 	pld->DU_Header[0].movie_fragment_sequence_number = moof_index;
 	pld->DU_Header[0].sample_number = sample_index;
+    pld->FT = FT;
+    
     offset = SMT_PACKET_HEAD_LENGTH + SMT_MPU_PAYLOAD_HEAD_LENGTH;
 	if(pld->FT == mfu)
 		offset += SMT_MPU_PAYLOAD_DU_HEAD_LENGTH;
@@ -1229,10 +1205,11 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 
         //send data
 #ifdef FIXED_UDP_LEN
-        if(0 > smt_callback_entity.packet_send(h, pld->data, MTU)){
+        if(0 > smt_callback_entity.packet_send(h, pld->data, MTU))
 #else
-        if(0 > smt_callback_entity.packet_send(h, pld->data, pld->data_len + offset)){
+        if(0 > smt_callback_entity.packet_send(h, pld->data, pld->data_len + offset))
 #endif
+        {   
             av_log(h, AV_LOG_ERROR, "send smt packet failed.\n");
             status = SMT_STATUS_ERROR;
             break;
@@ -1251,8 +1228,8 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 		position += pld->data_len;
         pkt_seq[asset]++;
 	}
-    free(pld->data);
-    free(pkt);
+    av_freep(&pld->data);
+    av_freep(&pkt);
 	return SMT_STATUS_OK;
 }
 
