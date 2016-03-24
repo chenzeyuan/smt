@@ -338,6 +338,7 @@ static int exit_on_keydown;
 static int exit_on_mousedown;
 static int loop = 1;
 static int framedrop = -1;
+static int hasframe = 0;
 static int infinite_buffer = -1;
 static enum ShowMode show_mode = SHOW_MODE_NONE;
 static const char *audio_codec_name;
@@ -1261,8 +1262,11 @@ static void set_default_window_size(int width, int height, AVRational sar)
 
 static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
 {
-    int flags = SDL_HWSURFACE | SDL_ASYNCBLIT | SDL_HWACCEL;
+    int flags = SDL_HWSURFACE | SDL_ASYNCBLIT | SDL_HWACCEL | SDL_NOFRAME;
     int w,h;
+
+    if (hasframe) flags &= ~SDL_NOFRAME;
+    else          flags |= SDL_NOFRAME;
 
     if (is_full_screen) flags |= SDL_FULLSCREEN;
     else                flags |= SDL_RESIZABLE;
@@ -1284,7 +1288,7 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
     if (screen && is->width == screen->w && screen->w == w
        && is->height== screen->h && screen->h == h && !force_set_video_mode)
         return 0;
-    screen = SDL_SetVideoMode(w/2, h/2, 0, flags);
+    screen = SDL_SetVideoMode(w, h, 0, flags);
     if (!screen) {
         av_log(NULL, AV_LOG_FATAL, "SDL: could not set video mode - exiting\n");
         do_exit(is);
@@ -3284,6 +3288,12 @@ static void toggle_full_screen(VideoState *is)
     video_open(is, 1, NULL);
 }
 
+static void toggle_no_frame(VideoState *is)
+{
+    hasframe = !hasframe;
+    video_open(is, 1, NULL);
+}
+
 static void toggle_audio_display(VideoState *is)
 {
     int bgcolor = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
@@ -3367,6 +3377,9 @@ static void event_loop(VideoState *cur_stream)
             case SDLK_f:
                 toggle_full_screen(cur_stream);
                 cur_stream->force_refresh = 1;
+                break;
+            case SDLK_o:
+                toggle_no_frame(cur_stream);
                 break;
             case SDLK_p:
             case SDLK_SPACE:
@@ -3653,6 +3666,7 @@ static const OptionDef options[] = {
     { "y", HAS_ARG, { .func_arg = opt_height }, "force displayed height", "height" },
     { "s", HAS_ARG | OPT_VIDEO, { .func_arg = opt_frame_size }, "set frame size (WxH or abbreviation)", "size" },
     { "fs", OPT_BOOL, { &is_full_screen }, "force full screen" },
+    { "wf", OPT_BOOL, { &hasframe }, "display frame" },
     { "an", OPT_BOOL, { &audio_disable }, "disable audio" },
     { "vn", OPT_BOOL, { &video_disable }, "disable video" },
     { "sn", OPT_BOOL, { &subtitle_disable }, "disable subtitling" },
