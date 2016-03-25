@@ -8,4 +8,5 @@ make install
 }
 
 PREFIX=$(pwd | xargs dirname)/gen
+mkdir -p $PREFIX
 build
