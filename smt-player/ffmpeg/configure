@@ -2961,7 +2961,9 @@ ffmpeg_deps="avcodec avfilter avformat swresample"
 ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
                null_filter
                setpts_filter trim_filter"
-if enabled sdl2; then
+#modified by Tony Chen
+sdl2-config --version >/dev/null 2>/dev/null
+if [ $? -eq 0 ]; then
 ffplay_deps="avcodec avformat swscale swresample sdl2"
 ffplay_libs='$sdl2_libs'
 else
@@ -5613,7 +5615,7 @@ if ! disabled sdl2; then
         enable sdl2
     else
         if "${SDL_CONFIG}" --version > /dev/null 2>&1; then
-            sdl2_cflags=$("${SDL_CONFIG}" --cflags)
+            sdl2_cflags=$("${SDL_CONFIG}" --cflags) -D_SDL2
             sdl2_libs=$("${SDL_CONFIG}" --libs)
             check_func_headers SDL_version.h SDL_Linked_Version $sdl_cflags $sdl_libs &&
             check_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) >= 0x010201" $sdl2_cflags &&
@@ -5628,7 +5630,9 @@ if ! disabled sdl2; then
     if test $target_os = "mingw32"; then
         sdl2_libs="$sdl2_libs -mconsole"
     fi
+    sdl2_cflags="$sdl2_cflags -D_SDL2"
 fi
+
 enabled sdl2 && add_cflags $sdl2_cflags && add_extralibs $sdl2_libs
 
 if ! enabled sdl2; then
