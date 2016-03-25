@@ -37,7 +37,7 @@ STRIP=strip
 CP=cp -p
 LN_S=ln -s -f
 CPPFLAGS= -D_ISOC99_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -DZLIB_CONST
-CFLAGS=   -std=c99 -fomit-frame-pointer -pthread -D_GNU_SOURCE=1 -D_REENTRANT -I/usr/include/SDL  -g -Wdeclaration-after-statement -Wall -Wdisabled-optimization -Wpointer-arith -Wredundant-decls -Wwrite-strings -Wtype-limits -Wundef -Wmissing-prototypes -Wno-pointer-to-int-cast -Wstrict-prototypes -Wempty-body -Wno-parentheses -Wno-switch -Wno-format-zero-length -Wno-pointer-sign -O3 -fno-math-errno -fno-signed-zeros -fno-tree-vectorize -Werror=format-security -Werror=implicit-function-declaration -Werror=missing-prototypes -Werror=return-type -Werror=vla -Wformat -fdiagnostics-color=auto -Wno-maybe-uninitialized
+CFLAGS=   -std=c99 -fomit-frame-pointer -pthread -I/usr/include/SDL -D_GNU_SOURCE=1 -D_REENTRANT  -g -Wdeclaration-after-statement -Wall -Wdisabled-optimization -Wpointer-arith -Wredundant-decls -Wwrite-strings -Wtype-limits -Wundef -Wmissing-prototypes -Wno-pointer-to-int-cast -Wstrict-prototypes -Wempty-body -Wno-parentheses -Wno-switch -Wno-format-zero-length -Wno-pointer-sign -O3 -fno-math-errno -fno-signed-zeros -fno-tree-vectorize -Werror=format-security -Werror=implicit-function-declaration -Werror=missing-prototypes -Werror=return-type -Werror=vla -Wformat -fdiagnostics-color=auto -Wno-maybe-uninitialized
 CXXFLAGS=  -D__STDC_CONSTANT_MACROS
 OBJCFLAGS=  
 ASFLAGS=   -g
@@ -99,10 +99,10 @@ HOSTLD_O=-o $@
 TARGET_EXEC= 
 TARGET_PATH=$(CURDIR)
 TARGET_SAMPLES=$(SAMPLES)
-CFLAGS-ffplay=-D_GNU_SOURCE=1 -D_REENTRANT -I/usr/include/SDL
+CFLAGS-ffplay=-I/usr/include/SDL -D_GNU_SOURCE=1 -D_REENTRANT
 ZLIB=-lz
 LIB_INSTALL_EXTRA_CMD=$$(RANLIB) "$(LIBDIR)/$(LIBNAME)"
-EXTRALIBS=-lXv -lX11 -lXext -lva -lva-x11 -lva -lxcb -lxcb-shm -lxcb -lxcb-xfixes -lxcb-render -lxcb-shape -lxcb -lxcb-shape -lxcb -lX11 -lasound -lSDL -lm -lz -pthread 
+EXTRALIBS=-lXv -lX11 -lXext -lva -lva-x11 -lva -lxcb -lxcb-shm -lxcb -lxcb-xfixes -lxcb-render -lxcb-shape -lxcb -lxcb-shape -lxcb -lX11 -lasound -L/usr/lib/x86_64-linux-gnu -lSDL -lm -lz -pthread 
 COMPAT_OBJS=
 EXEOBJS=
 INSTALL=install
@@ -154,7 +154,7 @@ avutil_FFLIBS=
 postproc_FFLIBS= avutil
 swresample_FFLIBS= avutil
 swscale_FFLIBS= avutil
-LIBS-ffplay=-lSDL
+LIBS-ffplay=-L/usr/lib/x86_64-linux-gnu -lSDL
 LIBS-ffprobe=
 LIBS-ffserver=
 LIBS-ffmpeg=-lvdpau
@@ -517,6 +517,7 @@ HAVE_MAKEINFO_HTML=yes
 HAVE_PERL=yes
 HAVE_POD2MAN=yes
 HAVE_SDL=yes
+!HAVE_SDL2=yes
 HAVE_SECTION_DATA_REL_RO=yes
 !HAVE_TEXI2HTML=yes
 HAVE_THREADS=yes
@@ -640,6 +641,7 @@ CONFIG_LIBXCB_XFIXES=yes
 !CONFIG_OPENSSL=yes
 !CONFIG_SCHANNEL=yes
 CONFIG_SDL=yes
+!CONFIG_SDL2=yes
 !CONFIG_SECURETRANSPORT=yes
 !CONFIG_X11GRAB=yes
 CONFIG_XLIB=yes
