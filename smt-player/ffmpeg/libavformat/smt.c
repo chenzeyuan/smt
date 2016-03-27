@@ -31,6 +31,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
 #include "libavutil/fifo.h"
+#include "libavutil/time.h"
 #include "network.h"
 #include "url.h"
 #include "smt_proto.h"
@@ -149,7 +150,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
                       s->dest_addr_len);
     } else
         ret = send(s->smt_fd, buf, len, 0);
-    usleep(100); //DO NOT SEND PKT TOO FAST
+    av_usleep(100); //DO NOT SEND PKT TOO FAST
     return ret < 0 ? ff_neterrno() : ret;
 
 }
