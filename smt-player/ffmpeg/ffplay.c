@@ -341,6 +341,7 @@ static int exit_on_mousedown;
 static int loop = 1;
 static int framedrop = -1;
 static int hasframe = 0;
+static int nb_subwindow = 0;
 static int infinite_buffer = -1;
 static enum ShowMode show_mode = SHOW_MODE_NONE;
 static const char *audio_codec_name;
@@ -968,15 +969,14 @@ static void video_image_display(VideoState *is)
     calculate_display_rect(&rect, is->xleft, is->ytop, is->width, is->height, vp->width, vp->height, vp->sar);
 #if CONFIG_SDL2
     if(texture) { 
-		SDL_LockTexture(texture, &rect,  vp->frame->data, vp->frame->linesize);
         SDL_UpdateYUVTexture(texture, &rect,  
                 vp->frame->data[0], vp->frame->linesize[0],  
                 vp->frame->data[1], vp->frame->linesize[1],  
                 vp->frame->data[2], vp->frame->linesize[2]);
-		SDL_UnlockTexture(texture);
 		SDL_RenderClear(renderer); 
 		SDL_RenderCopy(renderer, texture, NULL, &rect);	  
-		SDL_RenderPresent(renderer); 
+		SDL_RenderPresent(renderer);         
+        av_freep(vp->frame->data);
 #else
     if (vp->bmp) {
         if (is->subtitle_st) {
@@ -1012,7 +1012,7 @@ static void video_image_display(VideoState *is)
 #endif
 #endif
 
-        if (rect.x != is->last_display_rect.x || rect.y != is->last_display_rect.y || rect.w != is->last_display_rect.w || rect.h != is->last_display_rect.h || is->force_refresh) {
+        if (screen && (rect.x != is->last_display_rect.x || rect.y != is->last_display_rect.y || rect.w != is->last_display_rect.w || rect.h != is->last_display_rect.h || is->force_refresh)) {
             int bgcolor = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
             fill_border(is->xleft, is->ytop, is->width, is->height, rect.x, rect.y, rect.w, rect.h, bgcolor, 1);
             is->last_display_rect = rect;
@@ -1273,7 +1273,7 @@ static void stream_close(VideoState *is)
     /* free all pictures */
     frame_queue_destory(&is->pictq);
     frame_queue_destory(&is->sampq);
-    frame_queue_destory(&is->subpq);
+    frame_queue_destory(&is->subpq);   
     SDL_DestroyCond(is->continue_read_thread);
 #if !CONFIG_AVFILTER || CONFIG_SDL2
     sws_freeContext(is->img_convert_ctx);
@@ -1296,6 +1296,16 @@ static void do_exit(VideoState *is)
     avformat_network_deinit();
     if (show_status)
         printf("\n");
+#if CONFIG_SDL2
+    if(screen)
+        SDL_FreeSurface(screen);
+    if(texture)
+        SDL_DestroyTexture(texture);
+    if(renderer)
+        SDL_DestroyRenderer(renderer);
+    if(window)
+        SDL_DestroyWindow(window);
+#endif
     SDL_Quit();
     av_log(NULL, AV_LOG_QUIET, "%s", "");
     exit(0);
@@ -1317,6 +1327,7 @@ static void set_default_window_size(int width, int height, AVRational sar)
 static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
 {
     int w,h;
+    int i;
 #if CONFIG_SDL2
     int flags = SDL_WINDOW_OPENGL;
 
@@ -1357,19 +1368,21 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
         window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, flags);
         if(!window){
             av_log(NULL, AV_LOG_FATAL, "SDL: could not create window - exiting\n");
-            return 0;
+            do_exit(is);
         }
         renderer = SDL_CreateRenderer(window, -1, 0);
         if(!renderer){
             av_log(NULL, AV_LOG_FATAL, "SDL: could not create renderer - exiting\n");
-            return 0;
+            do_exit(is);
         }
         texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, w, h);
         if(!texture){
             av_log(NULL, AV_LOG_FATAL, "SDL: could not create texture - exiting\n");
-            return 0;
+            do_exit(is);
         }
         screen = SDL_GetWindowSurface(window);
+        if (!screen)
+            av_log(NULL, AV_LOG_WARNING, "can not get attached surface\n");
     }
 #else
     if (screen && is->width == screen->w && screen->w == w
@@ -1751,7 +1764,7 @@ display:
     }
 }
 
-#if !CONFIG_SDL2
+
 /* allocate a picture (needs to do that in main thread to avoid
    potential locking problems */
 static void alloc_picture(VideoState *is)
@@ -1760,7 +1773,7 @@ static void alloc_picture(VideoState *is)
     int64_t bufferdiff;
 
     vp = &is->pictq.queue[is->pictq.windex];
-
+#if !CONFIG_SDL2
     free_picture(vp);
 
     video_open(is, 0, vp);
@@ -1778,13 +1791,13 @@ static void alloc_picture(VideoState *is)
                         "to reduce the image size.\n", vp->width, vp->height );
         do_exit(is);
     }
-
+#endif
     SDL_LockMutex(is->pictq.mutex);
     vp->allocated = 1;
     SDL_CondSignal(is->pictq.cond);
     SDL_UnlockMutex(is->pictq.mutex);
 }
-#endif
+
 
 #if !CONFIG_SDL2
 static void duplicate_right_border_pixels(SDL_Overlay *bmp) {
@@ -1821,15 +1834,27 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
     vp->sar = src_frame->sample_aspect_ratio;
 
 #if CONFIG_SDL2
-    if (vp->width  != src_frame->width || vp->height != src_frame->height) {
+    if (vp->reallocate || !vp->allocated || vp->width  != src_frame->width || vp->height != src_frame->height) {
 		SDL_Event event;
+
+        vp->allocated  = 0;
+        vp->reallocate = 0;
         vp->width = src_frame->width;
         vp->height = src_frame->height;
 
         event.type = FF_ALLOC_EVENT;
         event.user.data1 = is;
         SDL_PushEvent(&event);
+
+        SDL_LockMutex(is->pictq.mutex);
+        while (!vp->allocated && !is->videoq.abort_request) {
+            SDL_CondWait(is->pictq.cond, is->pictq.mutex);
+        }
+
+        SDL_UnlockMutex(is->pictq.mutex);
     }
+
+
     
     AVDictionaryEntry *e = av_dict_get(sws_dict, "sws_flags", NULL, 0);
     if (e) {
@@ -1841,7 +1866,7 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
             exit(1);
     }
 
-	outbuffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P,  src_frame->width, src_frame->height,1));
+	outbuffer = (unsigned char *)av_mallocz(av_image_get_buffer_size(AV_PIX_FMT_YUV420P,  src_frame->width, src_frame->height,1));
 
 	av_image_fill_arrays(vp->frame->data, vp->frame->linesize,outbuffer,  
         AV_PIX_FMT_YUV420P,src_frame->width, src_frame->height,1);
@@ -1862,6 +1887,7 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
 	vp->serial = serial;
 
     frame_queue_push(&is->pictq);
+    
 #else
     /* alloc or resize hardware picture buffer */
     if (!vp->bmp || vp->reallocate || !vp->allocated ||
@@ -3312,7 +3338,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
         packet_queue_init(&is->audioq) < 0 ||
         packet_queue_init(&is->subtitleq) < 0)
         goto fail;
-
+    
     if (!(is->continue_read_thread = SDL_CreateCond())) {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
         goto fail;
@@ -3699,9 +3725,7 @@ static void event_loop(VideoState *cur_stream)
             do_exit(cur_stream);
             break;
         case FF_ALLOC_EVENT:
-#if !CONFIG_SDL2
             alloc_picture(event.user.data1);
-#endif
             break;
         default:
             break;
@@ -3861,6 +3885,9 @@ static const OptionDef options[] = {
     { "scodec", HAS_ARG | OPT_STRING | OPT_EXPERT, { &subtitle_codec_name }, "force subtitle decoder", "decoder_name" },
     { "vcodec", HAS_ARG | OPT_STRING | OPT_EXPERT, {    &video_codec_name }, "force video decoder",    "decoder_name" },
     { "autorotate", OPT_BOOL, { &autorotate }, "automatically rotate video", "" },
+#if CONFIG_SDL2
+    { "subwindow", OPT_INT | HAS_ARG | OPT_EXPERT, { &nb_subwindow }, "set number of subwindow", ""},
+#endif
     { NULL, },
 };
 
