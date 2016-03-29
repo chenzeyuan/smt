@@ -216,11 +216,6 @@ typedef struct id {
 } smt_id;
 
 
-smt_status smt_parse(URLContext *h, unsigned char* buffer, int *p_size);
-void smt_release_mpu(URLContext *h, smt_mpu *mpu);
-smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length);
-
-
 typedef struct callback {
     void (* mpu_callback_fun)(URLContext *h, smt_mpu *mpu);
     void (* sig_callback_fun)(URLContext *h, smt_sig *sig);
@@ -228,6 +223,33 @@ typedef struct callback {
     void (* id_callback_fun)(URLContext *h, smt_id *id);
     int  (* packet_send)(URLContext *h, unsigned char *buf, int len);
 } smt_callback;
+
+typedef struct smt_receive_entity{
+    bool             stack_init;
+    smt_status       packet_parser_status;
+    smt_parse_phase  packet_parse_phase;
+    unsigned char*   packet_buffer;
+    unsigned int     packet_buffer_data_len;
+    int              process_position;
+    smt_packet*      mpu_head[MAX_ASSET_NUMBER];
+    unsigned int     need_more_data, has_more_data;
+    smt_packet*      current_packet;
+    int              packet_counter;
+}smt_receive_entity;
+
+typedef struct smt_send_entity{
+    int              asset;
+    int              pkt_counter;
+    int              mpu_seq[MAX_ASSET_NUMBER];
+    int              pkt_seq[MAX_ASSET_NUMBER];
+    int              moof_index;
+    int              sample_index;
+} smt_send_entity;
+
+smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size);
+void smt_release_mpu(URLContext *h, smt_mpu *mpu);
+smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length);
+
 
 #endif
 

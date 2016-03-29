@@ -5,6 +5,7 @@
 
 //#define SMT_DUMP
 
+#if 0
 /*for receive*/
 static bool             stack_init = false;
 static smt_status       packet_parser_status;
@@ -16,7 +17,6 @@ static smt_packet*      mpu_head[MAX_ASSET_NUMBER];
 static unsigned int     need_more_data = 0, has_more_data = 0;
 static smt_packet*      current_packet;
 static int				packet_counter;
-extern smt_callback     smt_callback_entity;
 
 /*for send*/
 static int				asset;
@@ -25,18 +25,22 @@ static int 				mpu_seq[MAX_ASSET_NUMBER] = {0};
 static int              pkt_seq[MAX_ASSET_NUMBER] = {0};
 static int				moof_index;
 static int				sample_index;
+#endif
+
+extern smt_callback     smt_callback_entity;
 
 
-static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, smt_payload_mpu **p)
+static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
 {
+    unsigned char* buffer = recv->packet_buffer + recv->process_position;
     unsigned int data_len = 0, aggregation_du_index = 0;
     unsigned int remained_len = 0;
     unsigned int offset = 0;
     smt_payload_mpu *payload = *p;
-    if(packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
-        if(packet_buffer_data_len - process_position < SMT_MPU_PAYLOAD_HEAD_LENGTH){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = SMT_MPU_PAYLOAD_HEAD_LENGTH - (packet_buffer_data_len - process_position);
+    if(recv->packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
+        if(recv->packet_buffer_data_len - recv->process_position < SMT_MPU_PAYLOAD_HEAD_LENGTH){
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = SMT_MPU_PAYLOAD_HEAD_LENGTH - (recv->packet_buffer_data_len - recv->process_position);
             return SMT_STATUS_NEED_MORE_DATA;
         }
         payload->length = buffer[0] << 8 | buffer[1];
@@ -51,7 +55,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
                 payload->FT = mfu;
                 break;
             default:
-                packet_parser_status = SMT_STATUS_INIT;
+                recv->packet_parser_status = SMT_STATUS_INIT;
                 return SMT_STATUS_NOT_SUPPORT;
         }
         payload->T = (buffer[2] >> 3) & 0x01;
@@ -72,15 +76,15 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
         payload->A = buffer[2] & 0x01;
         payload->frag_counter = buffer[3];
         payload->MPU_sequence_number = (buffer[4] << 24) | (buffer[5] << 16) | (buffer[6] << 8) | buffer[7];
-		process_position += SMT_MPU_PAYLOAD_HEAD_LENGTH;
+		recv->process_position += SMT_MPU_PAYLOAD_HEAD_LENGTH;
 		offset = SMT_MPU_PAYLOAD_HEAD_LENGTH;
-        packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
+        recv->packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
     }
 
-    if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
-        if(packet_buffer_data_len - process_position < (payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2)){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = (payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2) - (packet_buffer_data_len - process_position);
+    if(recv->packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
+        if(recv->packet_buffer_data_len - recv->process_position < (payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2)){
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = (payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2) - (recv->packet_buffer_data_len - recv->process_position);
             return SMT_STATUS_NEED_MORE_DATA;
         }
         if(payload->A){
@@ -89,7 +93,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
             while(data_len > 0){
                 payload->DU_length[aggregation_du_index] = ((buffer+offset)[0] << 8) | (buffer+offset)[1];
                 offset += 2;
-				process_position += 2;
+				recv->process_position += 2;
                 if(payload->FT == mfu){
                     payload->DU_Header[aggregation_du_index].movie_fragment_sequence_number = ((buffer+offset)[0] << 24) | ((buffer+offset)[1] << 16) | ((buffer+offset)[2] << 8) | (buffer+offset)[3];
                     payload->DU_Header[aggregation_du_index].sample_number = ((buffer+offset)[4] << 24) | ((buffer+offset)[5] << 16) | ((buffer+offset)[6] << 8) | (buffer+offset)[7];
@@ -97,12 +101,12 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
                     payload->DU_Header[aggregation_du_index].priority = (buffer+offset)[12];
                     payload->DU_Header[aggregation_du_index].dep_counter = (buffer+offset)[13];
                     offset += 14;
-					process_position += 14;
+					recv->process_position += 14;
                 }
                 memcpy(payload->data + payload->data_len, buffer + offset, payload->DU_length[aggregation_du_index]);
                 payload->data_len += payload->DU_length[aggregation_du_index];
                 offset += payload->DU_length[aggregation_du_index];
-                process_position += payload->DU_length[aggregation_du_index];
+                recv->process_position += payload->DU_length[aggregation_du_index];
                 aggregation_du_index++;
                 if(aggregation_du_index > MAX_AGGGREGATION_DU_NUMBER){
                     av_log(h, AV_LOG_ERROR, "aggregated payload number is more than MAX number %d!\n", MAX_AGGGREGATION_DU_NUMBER);
@@ -118,7 +122,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
                 payload->DU_Header[aggregation_du_index].priority = (buffer+offset)[12];
                 payload->DU_Header[aggregation_du_index].dep_counter = (buffer+offset)[13];
                 offset += 14;
-				process_position += 14;
+				recv->process_position += 14;
 				data_len = payload->length - (SMT_MPU_PAYLOAD_HEAD_LENGTH + SMT_MPU_PAYLOAD_DU_HEAD_LENGTH) + 2;
             }else
             	data_len = payload->length - SMT_MPU_PAYLOAD_HEAD_LENGTH + 2;
@@ -127,20 +131,22 @@ static smt_status smt_parse_mpu_payload(URLContext *h, unsigned char* buffer, sm
             memcpy(payload->data, buffer + offset, data_len);
             offset += data_len;
             payload->data_len = data_len;
-            process_position += data_len;
+            recv->process_position += data_len;
         }
     }
     //av_log(h, AV_LOG_WARNING, "pld: mpu number: %d, fragment type = %d, f_i = %d \n", payload->MPU_sequence_number, payload->FT, payload->f_i);
     return SMT_STATUS_OK;
 }
 
-static smt_status smt_parse_gfd_payload(URLContext *h, unsigned char* buffer, unsigned int size, smt_payload_gfd **p)
+static smt_status smt_parse_gfd_payload(URLContext *h, smt_receive_entity *recv, smt_payload_gfd **p)
 {
+    unsigned char* buffer = recv->packet_buffer + recv->process_position;
+    unsigned int size = recv->packet_buffer_data_len - recv->process_position;
     smt_payload_gfd *payload = *p;
-    if(packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
+    if(recv->packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
         if(size < SMT_GFD_PAYLOAD_HEAD_LENGTH){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = SMT_GFD_PAYLOAD_HEAD_LENGTH - size;
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = SMT_GFD_PAYLOAD_HEAD_LENGTH - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
         payload->C = (buffer[0] >> 7) & 0x01;
@@ -150,26 +156,28 @@ static smt_status smt_parse_gfd_payload(URLContext *h, unsigned char* buffer, un
         payload->RES = buffer[1] & 0x1f;
         payload->TOI = (buffer[2] << 24) | (buffer[3] << 16) | (buffer[4] << 8) | buffer[5];
         payload->start_offset = (buffer[6] << 40) | (buffer[7] << 32) | (buffer[8] << 24) | (buffer[9] << 16) | (buffer[10] << 8) | buffer[11];
-        process_position += SMT_PARSE_PAYLOAD_HEADER;
-        packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
+        recv->process_position += SMT_PARSE_PAYLOAD_HEADER;
+        recv->packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
     }
-    if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
+    if(recv->packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
         payload->data = (unsigned char*)av_mallocz(size - SMT_PARSE_PAYLOAD_HEADER); // smt protocol has some problem for GFD mode. If length of sending packet is more than MTU, we have no way to get real length of payload data.
         memcpy(payload->data, buffer + SMT_PARSE_PAYLOAD_HEADER, size - SMT_PARSE_PAYLOAD_HEADER);
-        process_position += (size - SMT_PARSE_PAYLOAD_HEADER);
+        recv->process_position += (size - SMT_PARSE_PAYLOAD_HEADER);
     }
     return SMT_STATUS_OK;
 }
 
-static smt_status smt_parse_sig_payload(URLContext *h, unsigned char* buffer, int size, smt_payload_sig **p)
+static smt_status smt_parse_sig_payload(URLContext *h, smt_receive_entity *recv, smt_payload_sig **p)
 {
+    unsigned char* buffer = recv->packet_buffer + recv->process_position; 
+    int size = recv->packet_buffer_data_len - recv->process_position;
     unsigned int   offset = 0, data_len = 0;
     smt_payload_sig *payload = *p;
 
-    if(packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
+    if(recv->packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
         if(size < SMT_GFD_PAYLOAD_HEAD_LENGTH){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = SMT_GFD_PAYLOAD_HEAD_LENGTH - size;
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = SMT_GFD_PAYLOAD_HEAD_LENGTH - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
         switch((buffer[0] >> 6) & 0x03){
@@ -192,42 +200,42 @@ static smt_status smt_parse_sig_payload(URLContext *h, unsigned char* buffer, in
         payload->frag_counter = buffer[1];
         if(payload->A && payload->frag_counter){
             av_log(h, AV_LOG_ERROR, "aggregated payload can not count fragments!");
-            packet_parser_status = SMT_STATUS_INIT;
+            recv->packet_parser_status = SMT_STATUS_INIT;
             return SMT_STATUS_ERROR;
         }
-		process_position += SMT_SIG_PAYLOAD_HEAD_LENGTH;
+		recv->process_position += SMT_SIG_PAYLOAD_HEAD_LENGTH;
 		offset = SMT_SIG_PAYLOAD_HEAD_LENGTH;
-        packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
+        recv->packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
     }
     
-    if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
+    if(recv->packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
         while(offset < size){
                 if(payload->A){
                     if(payload->H){
                         payload->MSG_length = (buffer[2] << 8) | buffer[3];
-						process_position += 2;
+						recv->process_position += 2;
                         offset += 2;
                     }else{
                         payload->MSG_length = buffer[2];
-						process_position += 1;
+						recv->process_position += 1;
                         offset += 1;
                     }
                     data_len += payload->MSG_length;
                     payload->data = (unsigned char*)av_realloc(payload->data, data_len);
                     if(!payload->data){
                         av_log(h, AV_LOG_FATAL, "can not realloc memory for signaling message!");
-                        packet_parser_status = SMT_STATUS_INIT;
+                        recv->packet_parser_status = SMT_STATUS_INIT;
                         return SMT_STATUS_ERROR; 
                     }
                     memset(payload->data, 0, data_len);
                     memcpy(payload->data, buffer + offset, data_len);
-					process_position += data_len;
+					recv->process_position += data_len;
                     offset += data_len;
                 }else{
                     payload->data_len = size - offset;
                     payload->data = (unsigned char*)av_mallocz(size - offset);
                     memset(payload->data, buffer+offset, payload->data_len);
-					process_position += payload->data_len;
+					recv->process_position += payload->data_len;
                     offset += payload->data_len;
                 }
             }
@@ -238,39 +246,41 @@ static smt_status smt_parse_sig_payload(URLContext *h, unsigned char* buffer, in
     return SMT_STATUS_OK;
 }
 
-static smt_status smt_parse_repair_payload(URLContext *h, unsigned char* buffer, int size, smt_payload_id **p)
+static smt_status smt_parse_repair_payload(URLContext *h, smt_receive_entity *recv, smt_payload_id **p)
 {
+    unsigned char* buffer = recv->packet_buffer + recv->process_position;
+    int size = recv->packet_buffer_data_len - recv->process_position;
     unsigned int   offset = 0;
     smt_payload_id *payload = *p;
-    if(packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
+    if(recv->packet_parse_phase == SMT_PARSE_PAYLOAD_HEADER){
         if(size < SMT_ID_PAYLOAD_HEAD_LENGTH){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = SMT_ID_PAYLOAD_HEAD_LENGTH - size;
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = SMT_ID_PAYLOAD_HEAD_LENGTH - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
         payload->SS_start = (buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | buffer[3];
         payload->RSB_length = (buffer[4] << 16) | (buffer[5] << 8) | buffer[6];
         payload->RS_ID = (buffer[7] << 16) | (buffer[8] << 8) | buffer[9];
         payload->SSB_length = (buffer[10] << 16) | (buffer[11] << 8) | buffer[12];
-		process_position += SMT_ID_PAYLOAD_HEAD_LENGTH;
+		recv->process_position += SMT_ID_PAYLOAD_HEAD_LENGTH;
 		offset = SMT_ID_PAYLOAD_HEAD_LENGTH;
-        packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
+        recv->packet_parse_phase = SMT_ALLOC_PAYLOAD_DATA;
     }
 
-    if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
+    if(recv->packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
         if(size < MTU + 4){
-            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-            need_more_data = MTU + 4 - size;
+            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+            recv->need_more_data = MTU + 4 - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
         payload->data = (unsigned char *)av_mallocz(MTU);
         memcpy(payload->data, buffer + offset, MTU);
-		process_position += MTU;
+		recv->process_position += MTU;
         offset += MTU;
         payload->FFSRP_TS.TS_Indicator = ((buffer + offset)[0] >> 7) & 0x01; 
         payload->FFSRP_TS.FP_TS = (((buffer + offset)[0] << 24) & 0x7F) | ((buffer + offset)[1] << 16) | ((buffer + offset)[2] << 8) | (buffer + offset)[3];
         offset += 4;
-        process_position += 4;
+        recv->process_position += 4;
 
     }
 
@@ -278,7 +288,7 @@ static smt_status smt_parse_repair_payload(URLContext *h, unsigned char* buffer,
 }
 
 
-static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int size, smt_packet *p)
+static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int size, smt_packet *p)
 {
     smt_status ret = SMT_STATUS_OK;
     smt_payload *payload;
@@ -289,56 +299,56 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
     }
 	
     do{
-        switch(packet_parser_status){
+        switch(recv->packet_parser_status){
             case SMT_STATUS_INIT:{
-                packet_buffer = (unsigned char *)av_mallocz(size);
-                memcpy(packet_buffer, buffer, size);
-                packet_buffer_data_len = size;
-                if(packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
-                    packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-                    need_more_data = SMT_PACKET_HEAD_LENGTH - packet_buffer_data_len;
+                recv->packet_buffer = (unsigned char *)av_mallocz(size);
+                memcpy(recv->packet_buffer, buffer, size);
+                recv->packet_buffer_data_len = size;
+                if(recv->packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
+                    recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+                    recv->need_more_data = SMT_PACKET_HEAD_LENGTH - recv->packet_buffer_data_len;
                     return SMT_STATUS_NEED_MORE_DATA;
                 }else{
-                    packet_parse_phase = SMT_PARSE_PACKET_HEADER;
-                    packet_parser_status = SMT_STATUS_OK;
+                    recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER;
+                    recv->packet_parser_status = SMT_STATUS_OK;
                 }
                 break;
             }
             case SMT_STATUS_NEED_MORE_DATA:{
-                packet_buffer = (unsigned char *)av_realloc(packet_buffer, packet_buffer_data_len + size);
-                memcpy(packet_buffer+packet_buffer_data_len, buffer, size);
-                packet_buffer_data_len += size;
-                if(size < need_more_data){
-                    need_more_data = need_more_data - size;
+                recv->packet_buffer = (unsigned char *)av_realloc(recv->packet_buffer, recv->packet_buffer_data_len + size);
+                memcpy(recv->packet_buffer+recv->packet_buffer_data_len, buffer, size);
+                recv->packet_buffer_data_len += size;
+                if(size < recv->need_more_data){
+                    recv->need_more_data = recv->need_more_data - size;
                     return SMT_STATUS_NEED_MORE_DATA;
                 }else
-                    packet_parser_status = SMT_STATUS_OK;
+                    recv->packet_parser_status = SMT_STATUS_OK;
                 break;
             }
             case SMT_STATUS_HAS_MORE_DATA:{
-                packet_buffer = (unsigned char *)av_realloc(packet_buffer, packet_buffer_data_len + size);
-                memcpy(packet_buffer+packet_buffer_data_len, buffer, size);
-                packet_buffer_data_len += size;
-                if(packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
-                    packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-                    need_more_data = SMT_PACKET_HEAD_LENGTH - packet_buffer_data_len;
+                recv->packet_buffer = (unsigned char *)av_realloc(recv->packet_buffer, recv->packet_buffer_data_len + size);
+                memcpy(recv->packet_buffer+recv->packet_buffer_data_len, buffer, size);
+                recv->packet_buffer_data_len += size;
+                if(recv->packet_buffer_data_len < SMT_PACKET_HEAD_LENGTH){
+                    recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+                    recv->need_more_data = SMT_PACKET_HEAD_LENGTH - recv->packet_buffer_data_len;
                     return SMT_STATUS_NEED_MORE_DATA;
                 }else{
-                    packet_parse_phase = SMT_PARSE_PACKET_HEADER;
-                    packet_parser_status = SMT_STATUS_OK;
+                    recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER;
+                    recv->packet_parser_status = SMT_STATUS_OK;
                 }
                 break;
             }
             case SMT_STATUS_OK:{
-                if(packet_parse_phase == SMT_PARSE_PACKET_HEADER){
-                    p->V = (packet_buffer[0] >> 6) & 0x03;
+                if(recv->packet_parse_phase == SMT_PARSE_PACKET_HEADER){
+                    p->V = (recv->packet_buffer[0] >> 6) & 0x03;
                     if(p->V != 0){
                         av_log(h, AV_LOG_ERROR, "only smt verion 0 is supported! current version: %d\n",p->V);
                         return SMT_STATUS_ERROR;
                     }
                     
-                    p->C = (packet_buffer[0] >> 5) & 0x01;
-                    switch((packet_buffer[0] >> 3) & 0x03){
+                    p->C = (recv->packet_buffer[0] >> 5) & 0x01;
+                    switch((recv->packet_buffer[0] >> 3) & 0x03){
                         case 0x00: 
                             p->FEC = no_fec; 
                             break;
@@ -350,20 +360,20 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
                             break;
                         case 0x03: 
                             p->FEC = reserved; 
-                            packet_parser_status = SMT_STATUS_INIT;
+                            recv->packet_parser_status = SMT_STATUS_INIT;
                             av_log(h, AV_LOG_ERROR, "reserved FEC flag is not supported now.");
                             return SMT_STATUS_NOT_SUPPORT;
                     }
-                    p->r = (packet_buffer[0] >> 2) & 0x01;
-                    p->X = (packet_buffer[0] >> 1) & 0x01;
-                    p->R = packet_buffer[0] & 0x01;
+                    p->r = (recv->packet_buffer[0] >> 2) & 0x01;
+                    p->X = (recv->packet_buffer[0] >> 1) & 0x01;
+                    p->R = recv->packet_buffer[0] & 0x01;
                     if(p->R){
                         av_log(h, AV_LOG_WARNING, "Random access is not supported!");
-                        packet_parser_status = SMT_STATUS_INIT;
+                        recv->packet_parser_status = SMT_STATUS_INIT;
                         return SMT_STATUS_NOT_SUPPORT;
                     }
-                    p->RES = (packet_buffer[1] >> 6) & 0x03;
-                    switch(packet_buffer[1] & 0x3f){
+                    p->RES = (recv->packet_buffer[1] >> 6) & 0x03;
+                    switch(recv->packet_buffer[1] & 0x3f){
                         case  0x00:
                             p->type = mpu_payload;
                             break;
@@ -377,42 +387,42 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
                             p->type = repair_symbol_payload;
                             break;
                         default:
-                            packet_parser_status = SMT_STATUS_INIT;
-                            av_log(h, AV_LOG_ERROR, "wrong packet type. type = %d\n",packet_buffer[1] & 0x3f);
+                            recv->packet_parser_status = SMT_STATUS_INIT;
+                            av_log(h, AV_LOG_ERROR, "wrong packet type. type = %d\n",recv->packet_buffer[1] & 0x3f);
                             return SMT_STATUS_NOT_SUPPORT;
                     }
                     
-                    p->packet_id = (packet_buffer[2] << 8) | packet_buffer[3];
-                    p->timestamp = (packet_buffer[4] << 24) | (packet_buffer[5] << 16) | (packet_buffer[6] << 8) | packet_buffer[7];
-                    p->packet_sequence_number = (packet_buffer[8] << 24) | (packet_buffer[9] << 16) | (packet_buffer[10] << 8) | packet_buffer[11];
+                    p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
+                    p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
+                    p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
-                    p->packet_counter = (packet_buffer[12] << 24) | (packet_buffer[13] << 16) | (packet_buffer[14] << 8) | packet_buffer[15];
-                    process_position += 16;
-                    packet_parse_phase = SMT_PARSE_PACKET_HEADER_EXTENSION;
+                    p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
+                    recv->process_position += 16;
+                    recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER_EXTENSION;
                 }
                 
-                if(packet_parse_phase == SMT_PARSE_PACKET_HEADER_EXTENSION){
+                if(recv->packet_parse_phase == SMT_PARSE_PACKET_HEADER_EXTENSION){
                     if(p->X){
-                        if(packet_buffer_data_len - process_position < SMT_PACKET_HEAD_EXTENSION_LENGTH){
-                            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-                            need_more_data = SMT_PACKET_HEAD_EXTENSION_LENGTH - (packet_buffer_data_len - process_position);
+                        if(recv->packet_buffer_data_len - recv->process_position < SMT_PACKET_HEAD_EXTENSION_LENGTH){
+                            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+                            recv->need_more_data = SMT_PACKET_HEAD_EXTENSION_LENGTH - (recv->packet_buffer_data_len - recv->process_position);
                             return SMT_STATUS_NEED_MORE_DATA;
                         }
                         if(!p->header_extension.type && !p->header_extension.length){
-                            p->header_extension.type = (packet_buffer[16] << 8) | packet_buffer[17];
-                            p->header_extension.length = (packet_buffer[18] << 8) | packet_buffer[19];
-                            process_position += 4;
+                            p->header_extension.type = (recv->packet_buffer[16] << 8) | recv->packet_buffer[17];
+                            p->header_extension.length = (recv->packet_buffer[18] << 8) | recv->packet_buffer[19];
+                            recv->process_position += 4;
                         }
         
-                        if(packet_buffer_data_len - process_position < p->header_extension.length){
-                            packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-                            need_more_data = p->header_extension.length - (packet_buffer_data_len - process_position);
+                        if(recv->packet_buffer_data_len - recv->process_position < p->header_extension.length){
+                            recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+                            recv->need_more_data = p->header_extension.length - (recv->packet_buffer_data_len - recv->process_position);
                             return SMT_STATUS_NEED_MORE_DATA;
                         }
                         
-                        process_position += p->header_extension.length; //skip this field
+                        recv->process_position += p->header_extension.length; //skip this field
                     }
-                    packet_parse_phase = SMT_PARSE_PAYLOAD_HEADER;
+                    recv->packet_parse_phase = SMT_PARSE_PAYLOAD_HEADER;
                 }
         
         
@@ -420,37 +430,37 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
                 switch(p->type){
                     case mpu_payload:{
                         smt_payload_mpu *mpu = (smt_payload_mpu *)payload;
-                        ret = smt_parse_mpu_payload(h, packet_buffer + process_position, &mpu);
+                        ret = smt_parse_mpu_payload(h, recv, &mpu);
                         break;
                     }case gfd_payload:{
                         smt_payload_gfd *gfd = (smt_payload_gfd *)payload;
-                        ret = smt_parse_gfd_payload(h, packet_buffer + process_position, packet_buffer_data_len - process_position, &gfd);
+                        ret = smt_parse_gfd_payload(h, recv, &gfd);
                         break;
                     }case sig_payload:{
                         smt_payload_sig *sig = (smt_payload_sig *)payload;
-                        ret = smt_parse_sig_payload(h, packet_buffer + process_position, packet_buffer_data_len - process_position, &sig);
+                        ret = smt_parse_sig_payload(h, recv, &sig);
                         break;
                     }case repair_symbol_payload:{
                         smt_payload_id *id = (smt_payload_id *)payload;
-                        ret = smt_parse_repair_payload(h, packet_buffer + process_position, packet_buffer_data_len - process_position, &id);
+                        ret = smt_parse_repair_payload(h, recv, &id);
                         break;
                     }
                 }
         
                 if(ret == SMT_STATUS_OK){
                     if(p->FEC == al_fec_source && (p->type != repair_symbol_payload))
-                        packet_parse_phase = SMT_PARSE_FEC_TAIL;
+                        recv->packet_parse_phase = SMT_PARSE_FEC_TAIL;
                 }
         
-                if(packet_parse_phase == SMT_PARSE_FEC_TAIL){
-                    if(packet_buffer_data_len - process_position <  SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH){
-                        packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
-                        need_more_data = SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH - (packet_buffer_data_len - process_position);
+                if(recv->packet_parse_phase == SMT_PARSE_FEC_TAIL){
+                    if(recv->packet_buffer_data_len - recv->process_position <  SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH){
+                        recv->packet_parser_status = SMT_STATUS_NEED_MORE_DATA;
+                        recv->need_more_data = SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH - (recv->packet_buffer_data_len - recv->process_position);
                         return SMT_STATUS_NEED_MORE_DATA;
                     }
-                    p->Source_FEC_payload_ID.SS_ID = ((packet_buffer + process_position)[0] << 24) | ((packet_buffer + process_position)[1] << 16) | ((packet_buffer + process_position)[2] << 8) | (packet_buffer + process_position)[3];
-                    p->Source_FEC_payload_ID.FFSRP_TS = ((packet_buffer + process_position)[4] << 24) | ((packet_buffer + process_position)[5] << 16) | ((packet_buffer + process_position)[6] << 8) | (packet_buffer + process_position)[7];
-                    process_position += 8;
+                    p->Source_FEC_payload_ID.SS_ID = ((recv->packet_buffer + recv->process_position)[0] << 24) | ((recv->packet_buffer + recv->process_position)[1] << 16) | ((recv->packet_buffer + recv->process_position)[2] << 8) | (recv->packet_buffer + recv->process_position)[3];
+                    p->Source_FEC_payload_ID.FFSRP_TS = ((recv->packet_buffer + recv->process_position)[4] << 24) | ((recv->packet_buffer + recv->process_position)[5] << 16) | ((recv->packet_buffer + recv->process_position)[6] << 8) | (recv->packet_buffer + recv->process_position)[7];
+                    recv->process_position += 8;
                 }
             loop_end = true;
             break;
@@ -461,28 +471,28 @@ static smt_status smt_parse_packet(URLContext *h, unsigned char* buffer, int siz
 
 
 	if(ret == SMT_STATUS_OK){
-		av_assert0(process_position <= packet_buffer_data_len);
+		av_assert0(recv->process_position <= recv->packet_buffer_data_len);
 #ifdef FIXED_UDP_LEN
-        if(process_position < packet_buffer_data_len)
-            while(!*(packet_buffer+process_position)){
-                process_position++;
-                if(process_position == packet_buffer_data_len)
+        if(recv->process_position < recv->packet_buffer_data_len)
+            while(!*(recv->packet_buffer+recv->process_position)){
+                recv->process_position++;
+                if(recv->process_position == recv->packet_buffer_data_len)
                     break;
             }
 #endif
-		has_more_data = packet_buffer_data_len - process_position;
-		if(has_more_data){
-			packet_parser_status = SMT_STATUS_HAS_MORE_DATA;
-			memmove(packet_buffer, packet_buffer+process_position, has_more_data);
-			packet_buffer = (unsigned char *)av_realloc(packet_buffer, has_more_data);
+		recv->has_more_data = recv->packet_buffer_data_len - recv->process_position;
+		if(recv->has_more_data){
+			recv->packet_parser_status = SMT_STATUS_HAS_MORE_DATA;
+			memmove(recv->packet_buffer, recv->packet_buffer+recv->process_position, recv->has_more_data);
+			recv->packet_buffer = (unsigned char *)av_realloc(recv->packet_buffer, recv->has_more_data);
 			return SMT_STATUS_HAS_MORE_DATA;
 		}else{
-			packet_parse_phase = SMT_PARSE_NOT_START;
-			packet_parser_status = SMT_STATUS_INIT;
-			av_freep(&packet_buffer);
+			recv->packet_parse_phase = SMT_PARSE_NOT_START;
+			recv->packet_parser_status = SMT_STATUS_INIT;
+			av_freep(&recv->packet_buffer);
 		}
 	}else if(ret == SMT_STATUS_NEED_MORE_DATA){
-		has_more_data = 0;
+		recv->has_more_data = 0;
 	}
 /*
     av_log(h, AV_LOG_WARNING, "pkt: sequence number: %d, asset id = %d, counter = %d, size = %d, timestamp = %d \n",
@@ -509,7 +519,7 @@ static int smt_find_field(char *buf, int buf_len, char *field, int field_len)
 	return -1;
 }
 
-static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
+static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int asset_id, smt_mpu *mpu)
 {
     smt_packet *iterator;
 	unsigned int mpu_head_pkt_first_seq,mpu_head_pkt_last_seq, moov_head_pkt_first_seq, moov_head_pkt_last_seq;
@@ -524,7 +534,7 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 		phase_mfu
 	} status = phase_mpu_meta_begin;
 
-	iterator = mpu_head[asset_id];
+	iterator = recv->mpu_head[asset_id];
 	unsigned int expected_pkt_seq = iterator->packet_sequence_number;
 	
     while(iterator){
@@ -628,8 +638,8 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 			    int sample_size, default_sample_size;
 				if(!mpu->mpu_header_data || !mpu->moof_header_data){
 					// assmeble mpu header and moof header
-					int seq = mpu_head[asset_id]->packet_sequence_number;
-					smt_packet *it = mpu_head[asset_id];
+					int seq = recv->mpu_head[asset_id]->packet_sequence_number;
+					smt_packet *it = recv->mpu_head[asset_id];
 					mpu->mpu_header_data = (unsigned char *)av_mallocz(mpu->mpu_header_length);
 					mpu->moof_header_data = (unsigned char *)av_mallocz(mpu->moof_header_length);
 					
@@ -806,9 +816,9 @@ static smt_status smt_assemble_mpu(URLContext *h,int asset_id, smt_mpu *mpu)
 
 }
 
-static void smt_release_buffer(URLContext *h, int asset)
+static void smt_release_buffer(URLContext *h, smt_receive_entity *recv, int asset)
 {
-	smt_packet *iterator = mpu_head[asset];
+	smt_packet *iterator = recv->mpu_head[asset];
 	while(iterator){
 		smt_packet *tmp = iterator->next;
 		switch(iterator->type){
@@ -839,21 +849,21 @@ static void smt_release_buffer(URLContext *h, int asset)
 	}
 }
 
-static smt_status smt_add_mpu_packet(URLContext *h, smt_packet *p)
+static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, smt_packet *p)
 {
     int asset_id = p->packet_id;
     smt_status ret = SMT_STATUS_OK;
-    if(!mpu_head[asset_id]){
-        mpu_head[asset_id] = p;
+    if(!recv->mpu_head[asset_id]){
+        recv->mpu_head[asset_id] = p;
     }else{
         smt_payload_mpu *pld_f, *pld;
-        pld_f = (smt_payload_mpu *)&(mpu_head[asset_id]->payload);
+        pld_f = (smt_payload_mpu *)&(recv->mpu_head[asset_id]->payload);
         pld = (smt_payload_mpu *)&(p->payload);
         if(pld_f->MPU_sequence_number < pld->MPU_sequence_number){
                 smt_mpu *mpu = (smt_mpu *)av_mallocz(sizeof(smt_mpu));
                 mpu->asset = asset_id;
                 mpu->sequnce = pld_f->MPU_sequence_number;
-                ret = smt_assemble_mpu(h,asset_id, mpu);
+                ret = smt_assemble_mpu(h, recv, asset_id, mpu);
                 if(ret != SMT_STATUS_OK){
                     av_log(h, AV_LOG_ERROR, "assemble mpu %d failed!\n\n", pld_f->MPU_sequence_number);
                 }else{
@@ -872,17 +882,17 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_packet *p)
                         smt_release_mpu(h, mpu);
                 }
                 
-                smt_release_buffer(h, asset_id);
-                mpu_head[asset_id] = p;
+                smt_release_buffer(h, recv, asset_id);
+                recv->mpu_head[asset_id] = p;
                 return ret;
         }
         
-        if(p->packet_sequence_number < mpu_head[asset_id]->packet_sequence_number){
-            p->next = mpu_head[asset_id];
-            mpu_head[asset_id]->previous = p;
-            mpu_head[asset_id] = p;
+        if(p->packet_sequence_number < recv->mpu_head[asset_id]->packet_sequence_number){
+            p->next = recv->mpu_head[asset_id];
+            recv->mpu_head[asset_id]->previous = p;
+            recv->mpu_head[asset_id] = p;
         }else{
-            smt_packet *iterator = mpu_head[asset_id];
+            smt_packet *iterator = recv->mpu_head[asset_id];
             do{
                 if(p->packet_sequence_number == iterator->packet_sequence_number){
                     av_log(h, AV_LOG_ERROR, "duplicate packet sequence number. seq_num = %d\n", p->packet_sequence_number);
@@ -908,20 +918,20 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_packet *p)
 
 }
 
-static smt_status smt_add_packet(URLContext *h, smt_packet *p)
+static smt_status smt_add_packet(URLContext *h, smt_receive_entity *recv, smt_packet *p)
 {
     smt_status ret = SMT_STATUS_OK;
     int pkt_id = p->packet_id;
     smt_payload_type tp = p->type;
     if(pkt_id >= MAX_ASSET_NUMBER){
         av_log(h, AV_LOG_ERROR, "current asset number is %d, which is bigger than MAX_ASSET_NUMBER!\n", pkt_id);
-        packet_parser_status = SMT_STATUS_INIT;
+        recv->packet_parser_status = SMT_STATUS_INIT;
         return SMT_STATUS_NOT_SUPPORT;
     }
     
     switch(tp){
         case mpu_payload:
-            ret = smt_add_mpu_packet(h, p);
+            ret = smt_add_mpu_packet(h, recv, p);
             break;
         case gfd_payload:
             break;
@@ -932,7 +942,7 @@ static smt_status smt_add_packet(URLContext *h, smt_packet *p)
     return ret;
 }
 
-static smt_status smt_assemble_packet_header(URLContext *h, unsigned char *buffer, smt_packet *pkt)
+static smt_status smt_assemble_packet_header(URLContext *h, smt_send_entity *snd, unsigned char *buffer, smt_packet *pkt)
 {
 
     buffer[0] = (pkt->R&0x01) | (pkt->X&0x01) << 1 | (pkt->r&0x01) << 2 | (pkt->FEC&0x03) << 3 | (pkt->C&0x01) << 5 | (pkt->V&0x03) << 6;
@@ -959,7 +969,7 @@ static smt_status smt_assemble_packet_header(URLContext *h, unsigned char *buffe
 		memset(buffer + 19, 0, pkt->header_extension.length);
 		memcpy(buffer + 19, pkt->header_extension.header_extension_value, pkt->header_extension.length);
 	}
-    pkt_counter++;
+    snd->pkt_counter++;
 	return 0;
 }
 
@@ -996,7 +1006,7 @@ static smt_status smt_assemble_payload_header(URLContext *h, unsigned char *buff
 }
 
 
-smt_status smt_parse(URLContext *h, unsigned char* buffer, int *p_size)
+smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size)
 {
     smt_status status;
     unsigned char *payload_data = NULL;
@@ -1006,38 +1016,38 @@ smt_status smt_parse(URLContext *h, unsigned char* buffer, int *p_size)
     if(!buffer || !size)
         return SMT_STATUS_INVALID_INPUT;
 
-    if(!stack_init){
-        stack_init = true;
-        memset(mpu_head, 0, sizeof(smt_packet *)*10);
+    if(!recv->stack_init){
+        recv->stack_init = true;
+        memset(recv->mpu_head, 0, sizeof(smt_packet *)*10);
     }
-    if(packet_parser_status == SMT_STATUS_NEED_MORE_DATA){
-        packet = current_packet;
+    if(recv->packet_parser_status == SMT_STATUS_NEED_MORE_DATA){
+        packet = recv->current_packet;
     }else{
-        packet_parse_phase = SMT_PARSE_NOT_START;
-        if(packet_parser_status == SMT_STATUS_HAS_MORE_DATA)
-            packet_buffer_data_len = has_more_data;
+        recv->packet_parse_phase = SMT_PARSE_NOT_START;
+        if(recv->packet_parser_status == SMT_STATUS_HAS_MORE_DATA)
+            recv->packet_buffer_data_len = recv->has_more_data;
         else
-            packet_buffer_data_len = 0;
-        process_position = 0;
+            recv->packet_buffer_data_len = 0;
+        recv->process_position = 0;
         packet = (smt_packet *)av_mallocz(sizeof(smt_packet));
     }
     
-    status = smt_parse_packet(h, buffer, size, packet);
+    status = smt_parse_packet(h, recv, buffer, size, packet);
     switch(status){
         case SMT_STATUS_OK:
-            packet_parse_phase = SMT_PARSE_NOT_START;
-            status = smt_add_packet(h, packet);
+            recv->packet_parse_phase = SMT_PARSE_NOT_START;
+            status = smt_add_packet(h, recv, packet);
             break;
         case SMT_STATUS_HAS_MORE_DATA:
-            status = smt_add_packet(h, packet);
+            status = smt_add_packet(h, recv, packet);
             break;
         case SMT_STATUS_NEED_MORE_DATA:
-            *p_size = need_more_data;
-            current_packet = packet;
+            *p_size = recv->need_more_data;
+            recv->current_packet = packet;
             break;
         case SMT_STATUS_NOT_SUPPORT:
         case SMT_STATUS_ERROR:
-            if(packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
+            if(recv->packet_parse_phase == SMT_ALLOC_PAYLOAD_DATA){
                 switch(packet->type){
                     case mpu_payload:{
                         smt_payload_mpu *mpu = (smt_payload_mpu *)(&packet->payload);
@@ -1094,7 +1104,7 @@ void smt_release_mpu(URLContext *h, smt_mpu *mpu)
 }
 
 
-smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
+smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length)
 {
 	unsigned char *tag = buffer+4;
 	int position = 0;
@@ -1115,20 +1125,20 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 		hdlr = buffer + hdlr_offset;
 		media = MKTAG((hdlr + 0x0c)[0], (hdlr + 0x0c)[1], (hdlr + 0x0c)[2], (hdlr + 0x0c)[3]);
 		if(media == MKTAG('v','i','d','e'))
-			asset = 1;
+			snd->asset = 1;
 		else if(media == MKTAG('s','o','u','n'))
-			asset = 0;
+			snd->asset = 0;
         mmpu_offset = buffer[0] << 24 | buffer[1] << 16 | buffer[2] << 8 | buffer[3];
 		mmpu = buffer + mmpu_offset;
-		mpu_seq[asset] = (mmpu + 0x0d)[0] << 24 | (mmpu + 0x0d)[1] << 16 | (mmpu + 0x0d)[2] << 8 | (mmpu + 0x0d)[3];
-		moof_index = -1;
-		sample_index = 0;
+		snd->mpu_seq[snd->asset] = (mmpu + 0x0d)[0] << 24 | (mmpu + 0x0d)[1] << 16 | (mmpu + 0x0d)[2] << 8 | (mmpu + 0x0d)[3];
+		snd->moof_index = -1;
+		snd->sample_index = 0;
 		FT = mpu_metadata;
 	}else if(type == MKTAG('m','o','o','f')){
-		moof_index++;
+		snd->moof_index++;
 		FT = movie_fragment_metadata;
 	}else{
-		sample_index++;
+		snd->sample_index++;
 		FT = mfu;
 	}
 
@@ -1142,16 +1152,16 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 	pkt->R = 0;
 	pkt->RES = 0;
 	pkt->type = mpu_payload;
-    pkt->packet_id = asset;
+    pkt->packet_id = snd->asset;
     pld = (smt_payload_mpu *)&(pkt->payload);
 	pld->T = 1;
 	pld->A = 0;
 	pld->DU_Header[0].priority = 0;
 	pld->DU_Header[0].dep_counter = 0;
     pld->data = (unsigned char *)av_mallocz(MTU);
-	pld->MPU_sequence_number = mpu_seq[asset];
-	pld->DU_Header[0].movie_fragment_sequence_number = moof_index;
-	pld->DU_Header[0].sample_number = sample_index;
+	pld->MPU_sequence_number = snd->mpu_seq[snd->asset];
+	pld->DU_Header[0].movie_fragment_sequence_number = snd->moof_index;
+	pld->DU_Header[0].sample_number = snd->sample_index;
     pld->FT = FT;
     
     offset = SMT_PACKET_HEAD_LENGTH + SMT_MPU_PAYLOAD_HEAD_LENGTH;
@@ -1175,12 +1185,12 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
 		pld->f_i = first_fragment;
 	while(position < length){
         memset(pld->data, 0, MTU);
-		pkt->packet_counter = pkt_counter;
-        pkt->packet_sequence_number = pkt_seq[asset];
+		pkt->packet_counter = snd->pkt_counter;
+        pkt->packet_sequence_number = snd->pkt_seq[snd->asset];
         time_t t;
         time(&t);
         pkt->timestamp = t;
-		smt_assemble_packet_header(h, pld->data, pkt);
+		smt_assemble_packet_header(h, snd, pld->data, pkt);
 
         if(position > 0){
             if(length - position <= size)
@@ -1226,7 +1236,7 @@ smt_status smt_pack_mpu(URLContext *h, unsigned char* buffer, int length)
             offset);
 */   
 		position += pld->data_len;
-        pkt_seq[asset]++;
+        snd->pkt_seq[snd->asset]++;
 	}
     av_freep(&pld->data);
     av_freep(&pkt);

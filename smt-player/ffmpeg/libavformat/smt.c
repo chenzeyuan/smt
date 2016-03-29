@@ -73,6 +73,8 @@ typedef struct SMTContext {
     bool hflag;
     int stream_index;
     int audio_head_available, video_head_available;
+    smt_receive_entity *receive;
+    smt_send_entity *send;
 } SMTContext;
 
 static unsigned int consumption_length = 0;
@@ -167,7 +169,9 @@ static void *smt_mpu_generate_task( void *_URLContext)
         len = recv(s->smt_fd, buf, MTU, 0);
         if(len <= 0)
             break;
-        smt_parse(h, buf, &len);
+        if(!s->receive)
+            s->receive = (smt_receive_entity *)av_mallocz(sizeof(smt_receive_entity));
+        smt_parse(h, s->receive, buf, &len);
     }
 
     return  NULL;
@@ -476,6 +480,10 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     }
 
     s->smt_fd = smt_fd;
+
+    s->send = NULL;
+    s->receive = NULL;
+     
     s->fifo_size *= MTU;
     s->fifo = NULL;
     ret = pthread_mutex_init(&s->mutex, NULL);
@@ -553,7 +561,9 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
     int ret;
     //avformat_dump("../../../../Temp/snd_mpu_seq.data", buf, size, "a+");
     if(!s->cache){
-        ret = smt_pack_mpu(h, buf, size);
+        if(!s->send)
+            s->send = (smt_send_entity *)av_mallocz(sizeof(smt_send_entity));
+        ret = smt_pack_mpu(h, s->send, buf, size);
         if(ret == SMT_STATUS_NEED_MORE_DATA){
             pthread_mutex_lock(&s->mutex);
             s->cache = av_fifo_alloc(size);
@@ -597,6 +607,11 @@ static int smt_close(URLContext *h)
         av_fifo_freep(&s->fifo);
     if(s->cache)
         av_fifo_freep(&s->cache);
+
+    if (s->send)
+        av_freep(s->send);
+    if (s->receive)
+        av_freep(s->receive);
     return 0;
 }
 
@@ -634,7 +649,9 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
         if(avail > 0){
             unsigned char* buf = (unsigned char *)av_mallocz(avail);
             av_fifo_generic_read(s->cache, buf, avail, NULL);
-            status = smt_pack_mpu(h, buf, avail);
+            if(!s->send)
+                s->send = (smt_send_entity *)av_mallocz(sizeof(smt_send_entity));
+            status = smt_pack_mpu(h, s->send, buf, avail);
             if(SMT_STATUS_OK != status){
                   av_fifo_generic_write(s->cache, buf, avail, NULL); 
             }
