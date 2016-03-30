@@ -1362,9 +1362,8 @@ static void* sub_video_display_thread(void *arg)
     rect.h=is->sub_height;  
 
     while(!is->stop_sub_video){
-        if(frame_queue_nb_remaining <= 0)
-            continue;
-        pFrameYUV = frame_queue_peek(&is->sub_pictq);
+		if(!(pFrameYUV = frame_queue_peek_readable(&is->sub_pictq)))
+			break;
         frame_queue_next(&is->sub_pictq);
         calculate_display_rect(&rect, is->sub_xleft, is->sub_ytop, is->sub_width, is->sub_height, pFrameYUV->width, pFrameYUV->height, pFrameYUV->sar);
         SDL_UpdateYUVTexture(texture, &rect,  
