@@ -1398,9 +1398,7 @@ static void* sub_video_decode_thread(void *arg)
     Frame *pFrameYUV;
     int ret, got_picture;
     unsigned char *out_buffer;
-	double duration;
-
-	AVRational tb = is->sub_pFormatCtx->streams[is->sub_video_stream]->time_base;
+	//AVRational tb = is->sub_pFormatCtx->streams[is->sub_video_stream]->time_base;
     AVRational frame_rate = av_guess_frame_rate(is->sub_pFormatCtx, is->sub_pFormatCtx->streams[is->sub_video_stream], NULL);
       
     pCodecCtx=is->sub_pFormatCtx->streams[is->sub_video_stream]->codec;  
