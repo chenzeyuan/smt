@@ -1376,7 +1376,7 @@ static void* sub_video_display_thread(void *arg)
         SDL_RenderPresent( renderer );
         av_freep(pFrameYUV->frame->data);
         
-        SDL_Delay(40); 
+        SDL_Delay(pFrameYUV->duration*1000); 
 
     }
     SDL_DestroyTexture(texture);
@@ -1398,6 +1398,10 @@ static void* sub_video_decode_thread(void *arg)
     Frame *pFrameYUV;
     int ret, got_picture;
     unsigned char *out_buffer;
+	double duration;
+
+	AVRational tb = is->sub_pFormatCtx->streams[is->sub_video_stream]->time_base;
+    AVRational frame_rate = av_guess_frame_rate(is->sub_pFormatCtx, is->sub_pFormatCtx->streams[is->sub_video_stream], NULL);
       
     pCodecCtx=is->sub_pFormatCtx->streams[is->sub_video_stream]->codec;  
     pCodec=avcodec_find_decoder(pCodecCtx->codec_id);  
@@ -1448,7 +1452,8 @@ static void* sub_video_decode_thread(void *arg)
             pFrameYUV->sar = pFrame->sample_aspect_ratio;
             pFrameYUV->width = is->sub_width;
             pFrameYUV->height = is->sub_height;
-            frame_queue_push(&is->sub_pictq);
+			pFrameYUV->duration = (frame_rate.num && frame_rate.den ? av_q2d((AVRational){frame_rate.den, frame_rate.num}) : 0);
+			frame_queue_push(&is->sub_pictq);
             if(!is->sub_video_display_tid)
                 is->sub_video_display_tid = SDL_CreateThread(sub_video_display_thread, "sub video display", is);
         }
@@ -2097,7 +2102,6 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
     }
     sws_scale(is->img_convert_ctx, src_frame->data, src_frame->linesize,
               0, src_frame->height, vp->frame->data, vp->frame->linesize);
-    //av_log(NULL, AV_LOG_WARNING, "%d, %d, %d, %d, %d, %d\n", src_frame->width, src_frame->height, is->width, is->height, vp->width, vp->height);
 	vp->pts = pts;
 	vp->duration = duration;
 	vp->pos = pos;
