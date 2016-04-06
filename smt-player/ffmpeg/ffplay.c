@@ -984,8 +984,10 @@ static void video_image_display(VideoState *is)
                 vp->frame->data[2], vp->frame->linesize[2]);
 		SDL_RenderClear(renderer); 
 		SDL_RenderCopy(renderer, texture, NULL, &rect);	  
-		SDL_RenderPresent(renderer);         
-        av_freep(vp->frame->data);
+		SDL_RenderPresent(renderer);
+        
+        av_freep(&vp->frame->data);
+        av_frame_unref(vp->frame);
 #else
     if (vp->bmp) {
         if (is->subtitle_st) {
@@ -1343,7 +1345,7 @@ static void* sub_video_display_thread(void *arg)
     SDL_Texture* texture;  
     SDL_Rect rect;
     Frame *pFrameYUV;
-    window = SDL_CreateWindow("Simplest ffmpeg player's Window", is->width - is->sub_width - 50, 50,  
+    window = SDL_CreateWindow("", is->width - is->sub_width - 50, 50,  
         is->sub_width, is->sub_height,  
         SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_FOCUS);  
     
@@ -1364,7 +1366,8 @@ static void* sub_video_display_thread(void *arg)
     while(!is->stop_sub_video){
 		if(!(pFrameYUV = frame_queue_peek_readable(&is->sub_pictq)))
 			break;
-        frame_queue_next(&is->sub_pictq);
+        if(!pFrameYUV->frame)
+            break;
         calculate_display_rect(&rect, is->sub_xleft, is->sub_ytop, is->sub_width, is->sub_height, pFrameYUV->width, pFrameYUV->height, pFrameYUV->sar);
         SDL_UpdateYUVTexture(texture, &rect,  
         pFrameYUV->frame->data[0], pFrameYUV->frame->linesize[0],  
@@ -1374,9 +1377,12 @@ static void* sub_video_display_thread(void *arg)
         SDL_RenderClear( renderer );    
         SDL_RenderCopy( renderer, texture,  NULL, &rect);    
         SDL_RenderPresent( renderer );
-        av_freep(pFrameYUV->frame->data);
         
+        av_freep(&pFrameYUV->frame->data);
+        av_frame_unref(pFrameYUV->frame);
+        frame_queue_next(&is->sub_pictq);
         SDL_Delay(pFrameYUV->duration*1000); 
+        
 
     }
     SDL_DestroyTexture(texture);
@@ -1394,7 +1400,7 @@ static void* sub_video_decode_thread(void *arg)
     AVCodecContext  *pCodecCtx; 
     AVCodec         *pCodec;  
     struct SwsContext *img_convert_ctx;
-    AVFrame *pFrame; 
+    AVFrame *pFrame = av_frame_alloc(); 
     Frame *pFrameYUV;
     int ret, got_picture;
     unsigned char *out_buffer;
@@ -1421,22 +1427,21 @@ static void* sub_video_decode_thread(void *arg)
     
     packet_queue_start(&is->sub_videoq);
     for(;;){
+        AVPacket packet;
         if(is->stop_sub_video){
             int status;
             SDL_WaitThread(is->sub_video_display_tid, &status);
             break;
         }
-        AVPacket packet;
         if (packet_queue_get(&is->sub_videoq, &packet, 1, &is->sub_videoq.serial) < 0){
             av_log(NULL, AV_LOG_ERROR, "get packet error.\n");  
             return NULL;
         }
-        pFrame=av_frame_alloc();
         ret = avcodec_decode_video2(pCodecCtx, pFrame, &got_picture, &packet);
         if(ret < 0){
-            av_frame_free(&pFrame);
+            av_frame_unref(pFrame);
             av_log(NULL, AV_LOG_ERROR, "Decode Error.\n");  
-            break;  
+            continue;  
         }
 
         if(got_picture){
@@ -1455,11 +1460,13 @@ static void* sub_video_decode_thread(void *arg)
             if(!is->sub_video_display_tid)
                 is->sub_video_display_tid = SDL_CreateThread(sub_video_display_thread, "sub video display", is);
         }
-        av_frame_free(&pFrame);
+        av_packet_unref(&packet);
+        av_frame_unref(pFrame);
     }
     sws_freeContext(img_convert_ctx);
     avcodec_close(pCodecCtx);
     frame_queue_destory(&is->sub_pictq);
+    av_frame_free(&pFrame);
     av_log(NULL, AV_LOG_INFO, "sub video decode thread end.\n");
     return NULL;
 }
@@ -1468,7 +1475,7 @@ static void* sub_video_read_thread(void *arg)
 {
         VideoState *is = (VideoState *)arg;
         int i;   
-        AVPacket *packet;  
+        AVPacket *packet = av_packet_alloc();  
         int y_size;  
         int ret, got_picture;  
  
@@ -1501,7 +1508,6 @@ static void* sub_video_read_thread(void *arg)
                 SDL_WaitThread(is->sub_video_decode_tid, &status);
                 break;
             }
-            packet=(AVPacket *)av_mallocz(sizeof(AVPacket));
             if(av_read_frame(is->sub_pFormatCtx, packet) < 0)
                 break;
             if(packet->stream_index==is->sub_video_stream){
@@ -1509,9 +1515,10 @@ static void* sub_video_read_thread(void *arg)
                 if(!is->sub_video_decode_tid)
                     is->sub_video_decode_tid = SDL_CreateThread(sub_video_decode_thread, "sub video decode", is);
             }else
-                av_freep(packet);
+                av_packet_unref(packet);
         }
-
+        
+        av_packet_free(&packet);
         avformat_close_input(&is->sub_pFormatCtx); 
         packet_queue_destroy(&is->sub_videoq);
         av_log(NULL, AV_LOG_INFO, "sub video read thread end.\n");
