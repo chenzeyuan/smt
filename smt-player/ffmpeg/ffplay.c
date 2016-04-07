@@ -376,7 +376,7 @@ static AVPacket flush_pkt;
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
 #if CONFIG_SDL2
-static SDL_Window *window;
+static SDL_Window *window, *sub_window = NULL;
 static SDL_Renderer *renderer;
 static SDL_Texture *texture; 
 #endif
@@ -1352,7 +1352,9 @@ static void* sub_video_display_thread(void *arg)
     if(!window) {    
         av_log(NULL, AV_LOG_ERROR, "SDL: could not create window - exiting:%s\n",SDL_GetError());    
         return NULL;  
-    }  
+    }
+
+    sub_window = window;
     
     renderer = SDL_CreateRenderer(window, -1, 0);    
  
@@ -1541,8 +1543,6 @@ static int sub_video_open(VideoState *is)
         packet_queue_put(&is->sub_videoq, &flush_pkt);
         is->sub_video_display_tid = is->sub_video_decode_tid = is->sub_video_read_tid = NULL;
         is->sub_video_read_tid = SDL_CreateThread(sub_video_read_thread, "sub video read", is);
-        
-        
     }
     return 0;
 }
@@ -1609,8 +1609,6 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
         screen = SDL_GetWindowSurface(window);
         if (!screen)
             av_log(NULL, AV_LOG_WARNING, "can not get attached surface\n");
-
-        sub_video_open(is);
     }
 #else
     if (screen && is->width == screen->w && screen->w == w
@@ -1948,6 +1946,9 @@ display:
             if (is->step && !is->paused)
                 stream_toggle_pause(is);
         }
+
+        if(sub_window)
+            SDL_RaiseWindow(sub_window);
     }
     is->force_refresh = 0;
     if (show_status) {
@@ -3255,13 +3256,16 @@ static int read_thread(void *arg)
         av_dict_set(&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
         scan_all_pmts_set = 1;
     }
-
+   
     err = avformat_open_input(&ic, is->filename, is->iformat, &format_opts);
     if (err < 0) {
         print_error(is->filename, err);
         ret = -1;
         goto fail;
     }
+
+    sub_video_open(is);
+    
     if (scan_all_pmts_set)
         av_dict_set(&format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
 
@@ -3392,7 +3396,7 @@ static int read_thread(void *arg)
 
     if (infinite_buffer < 0 && is->realtime)
         infinite_buffer = 1;
-
+    
     for (;;) {
         if (is->abort_request)
             break;
@@ -3522,7 +3526,6 @@ static int read_thread(void *arg)
             av_packet_unref(pkt);
         }
     }
-
     ret = 0;
  fail:
     if (ic && !is->ic)
