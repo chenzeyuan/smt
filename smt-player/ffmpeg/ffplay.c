@@ -1441,6 +1441,8 @@ static void* sub_video_decode_thread(void *arg)
         }
         ret = avcodec_decode_video2(pCodecCtx, pFrame, &got_picture, &packet);
         if(ret < 0){
+            frame_queue_push(&is->sub_pictq);
+            av_packet_unref(&packet);
             av_frame_unref(pFrame);
             av_log(NULL, AV_LOG_ERROR, "Decode Error.\n");  
             continue;  

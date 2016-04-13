@@ -587,6 +587,9 @@ static int smt_close(URLContext *h)
 {
     int ret;
     SMTContext *s = h->priv_data;
+    time_t t = time(NULL);
+    struct tm *tp = localtime(&t);
+    av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
     if (s->is_multicast) 
         smt_leave_multicast_group(s->smt_fd, (struct sockaddr *)&s->dest_addr,(struct sockaddr *)&s->local_addr_storage);
     closesocket(s->smt_fd);
@@ -609,9 +612,10 @@ static int smt_close(URLContext *h)
         av_fifo_freep(&s->cache);
 
     if (s->send)
-        av_freep(s->send);
+        av_freep(&s->send);
     if (s->receive)
-        av_freep(s->receive);
+        av_freep(&s->receive);
+    
     return 0;
 }
 

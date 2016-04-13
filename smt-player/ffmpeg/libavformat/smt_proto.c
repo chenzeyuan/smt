@@ -1,7 +1,7 @@
-#include <time.h>
 #include "smt_proto.h"
 #include "avformat.h"
 #include "libavutil/avassert.h"
+#include "libavutil/time.h"
 
 //#define SMT_DUMP
 
@@ -131,6 +131,7 @@ static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv,
             memcpy(payload->data, buffer + offset, data_len);
             offset += data_len;
             payload->data_len = data_len;
+            av_assert0(payload->data_len);
             recv->process_position += data_len;
         }
     }
@@ -636,6 +637,10 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 				break;
 			}case phase_mfu:{
 			    int sample_size, default_sample_size;
+                if(mfu != pld->FT){
+                    av_log(h, AV_LOG_ERROR, "wrong payload type = %d\n", pld->FT);
+                    return SMT_STATUS_ERROR;
+                }
 				if(!mpu->mpu_header_data || !mpu->moof_header_data){
 					// assmeble mpu header and moof header
 					int seq = recv->mpu_head[asset_id]->packet_sequence_number;
@@ -738,6 +743,8 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
                 }else{
                     sample_size = default_sample_size;
                 }
+                if(sample_size < MIN_PACKET_SIZE)
+                    av_log(h, AV_LOG_WARNING, "asset %d packet length is %d, time = %llu\n",asset_id, sample_size, av_gettime());
                 int sample_process_finish = 1;
 			
 				if(sample_index < pld->DU_Header[0].sample_number - 1){ //sample number is started from 1
@@ -751,10 +758,19 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 						memcpy(mpu->sample_data + data_offset, pld->data, sample_size); //copy from packet directly
 						iterator = iterator->next;
 					}else if(pld->f_i == first_fragment){
+					    int good_sample = 0;
+						unsigned int pos = 0;
 						unsigned char *sample_buf = (unsigned char *)av_mallocz(sample_size);
-						int good_sample = 0;
-						int pos = 0;
+                        int temp_sample_size = sample_size; 
+                        if(!sample_buf){
+                            av_log(h, AV_LOG_ERROR, "malloc sample buffer failed\n");
+                            return SMT_STATUS_ERROR;
+                        }
 						do{
+                            if(pos + pld->data_len > temp_sample_size){
+                                temp_sample_size = pos + pld->data_len;
+                                sample_buf = (unsigned char *)av_realloc(sample_buf, temp_sample_size);
+                            }
 							memcpy(sample_buf + pos, pld->data, pld->data_len);
 							pos += pld->data_len;
 							int seq = iterator->packet_sequence_number;
@@ -780,11 +796,15 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 						}while(good_sample);
 
 						if(good_sample){  //only copy good sample
-							av_assert0(pos == sample_size || !iterator);
-							memcpy(mpu->sample_data + data_offset, sample_buf, sample_size);
+							//av_assert0(pos == sample_size || !iterator);
+							if(pos != sample_size){
+                                av_log(h, AV_LOG_WARNING, "last fragment position(%u) which in not equal sample size(%u),time = %llu\n",pos, sample_size, av_gettime());
+                            }
+                            memcpy(mpu->sample_data + data_offset, sample_buf, sample_size);
                             //av_log(h, AV_LOG_INFO, "sample %d is a good sample, sample_size = %d\n",sample_index, sample_size);
 						}
-						av_freep(&sample_buf);
+                        if(sample_buf)
+						    av_freep(&sample_buf);
 					}else{
 						int counter = 0;
 						while(pld->f_i != first_fragment && pld->f_i != complete_data){ //skip useless packets
@@ -1106,41 +1126,47 @@ void smt_release_mpu(URLContext *h, smt_mpu *mpu)
 
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length)
 {
-	unsigned char *tag = buffer+4;
 	int position = 0;
 	smt_packet *pkt = NULL;
 	smt_payload_mpu *pld = NULL;
 	int size, offset = 0, ext = 0;
     smt_status status;
     smt_fragment_type FT = none;
-	int type = MKTAG(tag[0],tag[1],tag[2],tag[3]);
-    
-	if(type == MKTAG('f','t','y','p')){
-		int hdlr_offset, mmpu_offset;
-		unsigned char *hdlr, *mmpu;
-		int media;
-		hdlr_offset = smt_find_field(buffer,length,"hdlr", 4);
-        if(hdlr_offset < 0)
-            return SMT_STATUS_NEED_MORE_DATA;
-		hdlr = buffer + hdlr_offset;
-		media = MKTAG((hdlr + 0x0c)[0], (hdlr + 0x0c)[1], (hdlr + 0x0c)[2], (hdlr + 0x0c)[3]);
-		if(media == MKTAG('v','i','d','e'))
-			snd->asset = 1;
-		else if(media == MKTAG('s','o','u','n'))
-			snd->asset = 0;
-        mmpu_offset = buffer[0] << 24 | buffer[1] << 16 | buffer[2] << 8 | buffer[3];
-		mmpu = buffer + mmpu_offset;
-		snd->mpu_seq[snd->asset] = (mmpu + 0x0d)[0] << 24 | (mmpu + 0x0d)[1] << 16 | (mmpu + 0x0d)[2] << 8 | (mmpu + 0x0d)[3];
-		snd->moof_index = -1;
-		snd->sample_index = 0;
-		FT = mpu_metadata;
-	}else if(type == MKTAG('m','o','o','f')){
-		snd->moof_index++;
-		FT = movie_fragment_metadata;
-	}else{
-		snd->sample_index++;
-		FT = mfu;
-	}
+	
+    if(length >= MIN_PACKET_SIZE){
+        unsigned char *tag = buffer+4;
+        int type = MKTAG(tag[0],tag[1],tag[2],tag[3]);
+        if(type == MKTAG('f','t','y','p')){
+            int hdlr_offset, mmpu_offset;
+            unsigned char *hdlr, *mmpu;
+            int media;
+            hdlr_offset = smt_find_field(buffer,length,"hdlr", 4);
+            if(hdlr_offset < 0)
+                return SMT_STATUS_NEED_MORE_DATA;
+            hdlr = buffer + hdlr_offset;
+            media = MKTAG((hdlr + 0x0c)[0], (hdlr + 0x0c)[1], (hdlr + 0x0c)[2], (hdlr + 0x0c)[3]);
+            if(media == MKTAG('v','i','d','e'))
+                snd->asset = 1;
+            else if(media == MKTAG('s','o','u','n'))
+                snd->asset = 0;
+            mmpu_offset = buffer[0] << 24 | buffer[1] << 16 | buffer[2] << 8 | buffer[3];
+            mmpu = buffer + mmpu_offset;
+            snd->mpu_seq[snd->asset] = (mmpu + 0x0d)[0] << 24 | (mmpu + 0x0d)[1] << 16 | (mmpu + 0x0d)[2] << 8 | (mmpu + 0x0d)[3];
+            snd->moof_index = -1;
+            snd->sample_index = 0;
+            FT = mpu_metadata;
+        }else if(type == MKTAG('m','o','o','f')){
+            snd->moof_index++;
+            FT = movie_fragment_metadata;
+        }else{
+            snd->sample_index++;
+            FT = mfu;
+        }
+    }else{
+        snd->sample_index++;
+        FT = mfu;
+        av_log(h, AV_LOG_WARNING, "packet length is %d, assume it is mfu. time = %llu\n", length, av_gettime());
+    }
 
 	//initialization
 	pkt = (smt_packet *)av_mallocz(sizeof(smt_packet));
@@ -1209,6 +1235,8 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
 			pld->length = MTU - SMT_PACKET_HEAD_LENGTH - 2;
             pld->data_len = size;
         }
+
+        av_assert0(pld->data_len != 2 || pld->f_i != complete_data || pld->FT == mfu);
         
         smt_assemble_payload_header(h, pld->data + SMT_PACKET_HEAD_LENGTH + ext , pld);
         memcpy(pld->data + offset, buffer + position, pld->data_len);
