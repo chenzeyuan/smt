@@ -4587,14 +4587,14 @@ static int mov_flush_mpu_fragment(AVFormatContext *s, int force)
 
       
         for(entry_index = first; entry_index < last; entry_index++){
-			unsigned char seperate_packet = track->cluster[entry_index].size > IO_BUFFER_SIZE;
+			      unsigned char seperate_packet = track->cluster[entry_index].size > IO_BUFFER_SIZE;
             char pSize[64];
             memset(pSize, 0, 64);
 			
 			if(seperate_packet){
-				sprintf(pSize, "%u", track->cluster[entry_index].size);
-				av_dict_set(&options, "smt_payload_size", pSize, AV_DICT_MATCH_CASE);
-				s->pb->set(s->pb->opaque, options);
+			    sprintf(pSize, "%u", track->cluster[entry_index].size);
+			    av_dict_set(&options, "smt_payload_size", pSize, AV_DICT_MATCH_CASE);
+			    s->pb->set(s->pb->opaque, options);
 			}
             avio_write(s->pb, buf + offset, track->cluster[entry_index].size);
             avio_flush(s->pb);
@@ -4603,8 +4603,9 @@ static int mov_flush_mpu_fragment(AVFormatContext *s, int force)
 	            s->pb->set(s->pb->opaque, options);
 			}
             offset += track->cluster[entry_index].size;
-            if(offset >= buf_size)
-                break;
+            av_assert0(offset <= buf_size);
+            //if(offset >= buf_size)
+                //break;
         }
         
         av_dict_set(&options, "smt_payload_size", NULL, AV_DICT_MATCH_CASE); 
