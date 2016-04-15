@@ -745,6 +745,10 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
                 }
                 if(sample_size < MIN_PACKET_SIZE)
                     av_log(h, AV_LOG_WARNING, "asset %d packet length is %d, time = %llu\n",asset_id, sample_size, av_gettime());
+                if(sample_size > mpu->sample_length){
+                    av_log(h, AV_LOG_ERROR, "single sample size %d more than madt size %d\n", sample_size, mpu->sample_length);
+                    return SMT_STATUS_ERROR;
+                }
                 int sample_process_finish = 1;
 			
 				if(sample_index < pld->DU_Header[0].sample_number - 1){ //sample number is started from 1
@@ -796,15 +800,24 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 						}while(good_sample);
 
 						if(good_sample){  //only copy good sample
+						    int copy_len = sample_size;
 							//av_assert0(pos == sample_size || !iterator);
 							if(pos != sample_size){
-                                av_log(h, AV_LOG_WARNING, "last fragment position(%u) which in not equal sample size(%u),time = %llu\n",pos, sample_size, av_gettime());
+                                //char dbgfn[256] = {0};
+                                //sprintf(dbgfn, "../../../../Temp/dbginfo_%x_%x_%x_%d.data", mpu->sample_length, sample_size, pos, sample_index);
+                                //avformat_dump(dbgfn, mpu->mpu_header_data, mpu->mpu_header_length, "a+");
+                                //avformat_dump(dbgfn, mpu->moof_header_data, mpu->moof_header_length, "a+");
+                                av_log(h, AV_LOG_ERROR, "last fragment position(%u) which in not equal sample size(%u),time = %llu\n",pos, sample_size, av_gettime());
+                                //av_freep(&sample_buf);
+                                //return SMT_STATUS_ERROR;
+                                if(pos < sample_size)
+                                    copy_len = pos;
                             }
-                            memcpy(mpu->sample_data + data_offset, sample_buf, sample_size);
+                            
+                            memcpy(mpu->sample_data + data_offset, sample_buf, copy_len);
                             //av_log(h, AV_LOG_INFO, "sample %d is a good sample, sample_size = %d\n",sample_index, sample_size);
 						}
-                        if(sample_buf)
-						    av_freep(&sample_buf);
+						av_freep(&sample_buf);
 					}else{
 						int counter = 0;
 						while(pld->f_i != first_fragment && pld->f_i != complete_data){ //skip useless packets
@@ -886,6 +899,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                 ret = smt_assemble_mpu(h, recv, asset_id, mpu);
                 if(ret != SMT_STATUS_OK){
                     av_log(h, AV_LOG_ERROR, "assemble mpu %d failed!\n\n", pld_f->MPU_sequence_number);
+                    smt_release_mpu(h, mpu);
                 }else{
 #ifdef SMT_DUMP
                     char fn[256];
