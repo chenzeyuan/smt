@@ -211,6 +211,9 @@ typedef struct VideoState {
     AVFormatContext *sub_pFormatCtx;
     int sub_video_stream;
     int stop_sub_video;
+    int is_sub_display;
+    SDL_mutex *sub_display_mutex;
+    SDL_cond *sub_display_cond;
 #endif
     AVInputFormat *iformat;
     int abort_request;
@@ -1288,6 +1291,10 @@ static void stream_close(VideoState *is)
     SDL_DestroyCond(is->continue_read_thread);
 #if !CONFIG_AVFILTER || CONFIG_SDL2
     sws_freeContext(is->img_convert_ctx);
+    if(is->sub_display_cond)
+        SDL_DestroyCond(is->sub_display_cond);
+    if(is->sub_display_mutex)
+        SDL_DestroyMutex(is->sub_display_mutex);
 #endif
     sws_freeContext(is->sub_convert_ctx);
     av_free(is->filename);
@@ -1346,6 +1353,12 @@ static void* sub_video_display_thread(void *arg)
     SDL_Rect rect;
     Frame *pFrameYUV;
     av_log(NULL, AV_LOG_INFO, "sub video display thread start.\n");
+    
+    SDL_LockMutex(is->sub_display_mutex);
+    if(!is->is_sub_display)
+        SDL_CondWait(is->sub_display_cond, is->sub_display_mutex);
+    SDL_UnlockMutex(is->sub_display_mutex);
+    
     window = SDL_CreateWindow("", is->width - is->sub_width - 50, 50,  
         is->sub_width, is->sub_height,  
         SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_FOCUS);  
@@ -1545,6 +1558,9 @@ static int sub_video_open(VideoState *is)
 {
     if(sub_input_filename){
         is->stop_sub_video = 0;
+        is->is_sub_display = 0;
+        is->sub_display_mutex = SDL_CreateMutex();
+        is->sub_display_cond= SDL_CreateCond();
         if (frame_queue_init(&is->sub_pictq, &is->sub_videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0)
             return -1;
 
@@ -1623,6 +1639,11 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
         if (!screen)
             av_log(NULL, AV_LOG_WARNING, "can not get attached surface\n");
     }
+    is->is_sub_display = 1;
+    SDL_LockMutex(is->sub_display_mutex);
+    SDL_CondSignal(is->sub_display_cond);
+    SDL_UnlockMutex(is->sub_display_mutex);
+
 #else
     if (screen && is->width == screen->w && screen->w == w
        && is->height== screen->h && screen->h == h && !force_set_video_mode)
