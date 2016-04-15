@@ -1345,6 +1345,7 @@ static void* sub_video_display_thread(void *arg)
     SDL_Texture* texture;  
     SDL_Rect rect;
     Frame *pFrameYUV;
+    av_log(NULL, AV_LOG_INFO, "sub video display thread start.\n");
     window = SDL_CreateWindow("", is->width - is->sub_width - 50, 50,  
         is->sub_width, is->sub_height,  
         SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_FOCUS);  
@@ -1408,7 +1409,9 @@ static void* sub_video_decode_thread(void *arg)
     unsigned char *out_buffer;
 	//AVRational tb = is->sub_pFormatCtx->streams[is->sub_video_stream]->time_base;
     AVRational frame_rate = av_guess_frame_rate(is->sub_pFormatCtx, is->sub_pFormatCtx->streams[is->sub_video_stream], NULL);
-      
+
+
+    av_log(NULL, AV_LOG_INFO, "sub video decode thread start.\n");
     pCodecCtx=is->sub_pFormatCtx->streams[is->sub_video_stream]->codec;  
     pCodec=avcodec_find_decoder(pCodecCtx->codec_id);  
 
@@ -1482,7 +1485,9 @@ static void* sub_video_read_thread(void *arg)
         AVPacket *packet = av_packet_alloc();  
         int y_size;  
         int ret, got_picture;  
- 
+        SDL_mutex *wait_mutex = SDL_CreateMutex();
+        
+        av_log(NULL, AV_LOG_INFO, "sub video read thread start.\n");
         is->sub_pFormatCtx = avformat_alloc_context();  
       
         if(avformat_open_input(&is->sub_pFormatCtx,sub_input_filename,NULL,NULL)!=0){  
@@ -1507,13 +1512,19 @@ static void* sub_video_read_thread(void *arg)
         av_dump_format(is->sub_pFormatCtx,0,sub_input_filename,0);  
          
         for(;;){
-            if(is->stop_sub_video){
+            if (infinite_buffer < 1 && is->sub_videoq.size > MAX_QUEUE_SIZE ) {
+                /* wait 10 ms */
+                SDL_LockMutex(wait_mutex);
+                SDL_CondWaitTimeout(is->continue_read_thread, wait_mutex, 10);
+                SDL_UnlockMutex(wait_mutex);
+                continue;
+            }
+
+            if(is->stop_sub_video || av_read_frame(is->sub_pFormatCtx, packet) < 0){
                 int status;
                 SDL_WaitThread(is->sub_video_decode_tid, &status);
                 break;
             }
-            if(av_read_frame(is->sub_pFormatCtx, packet) < 0)
-                break;
             if(packet->stream_index==is->sub_video_stream){
                 packet_queue_put(&is->sub_videoq, packet);
                 if(!is->sub_video_decode_tid)
