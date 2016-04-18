@@ -5,7 +5,7 @@
 #include "url.h"
 
 
-#define MTU 1500
+#define MTU 1452     //ip 20 + udp 8 + mtp 1452 = 1480      1500
 #define MAX_ASSET_NUMBER 10
 #define MAX_AGGGREGATION_DU_NUMBER 1000
 #define MIN_PACKET_SIZE 8

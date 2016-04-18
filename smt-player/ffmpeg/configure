@@ -5611,7 +5611,7 @@ if ! disabled sdl2; then
     SDL_CONFIG="${cross_prefix}sdl2-config"
     if check_pkg_config sdl2 SDL_events.h SDL_PollEvent; then
         check_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) > 0x010300" $sdl2_cflags &&
-        check_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) <= 0x020002" $sdl2_cflags &&
+        check_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) <= 0x020004" $sdl2_cflags &&
         enable sdl2
     else
         if "${SDL_CONFIG}" --version > /dev/null 2>&1; then

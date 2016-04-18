@@ -329,8 +329,8 @@ static const char *input_filename;
 static const char *window_title;
 static int fs_screen_width;
 static int fs_screen_height;
-static int default_width  = 640;
-static int default_height = 480;
+static int default_width  = 1366;
+static int default_height = 768;
 static int screen_width  = 0;
 static int screen_height = 0;
 static int audio_disable;
@@ -1620,7 +1620,7 @@ static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
         window_title = input_filename;
 #if CONFIG_SDL2
     if(!window){
-        window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, flags);
+        window = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, flags);
         if(!window){
             av_log(NULL, AV_LOG_FATAL, "SDL: could not create window - exiting\n");
             do_exit(is);

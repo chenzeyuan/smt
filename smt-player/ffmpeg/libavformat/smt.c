@@ -40,7 +40,7 @@
 
 
 
-#define SMT_MAX_PKT_SIZE 65536
+#define SMT_MAX_PKT_SIZE (65536 * 20)
 #define SMT_DATA_NOT_READY -11
 
 #define SMT_NO_AUDIO 0
