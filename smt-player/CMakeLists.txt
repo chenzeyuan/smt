@@ -5,46 +5,101 @@ cmake_minimum_required(VERSION 3.0.2)
 
 PROJECT(smt-player)
 
+SET(CMAKE_C_COMPILER "gcc")
+
 #head file path
 INCLUDE_DIRECTORIES(
-    include
+    gen/include
+    /usr/include
 )
 
 #add link lirarries path
 LINK_DIRECTORIES(
-    lib
+    gen/lib
+    /usr/lib/x86_64-linux-gnu
 )
 
 #source directory
-AUX_SOURCE_DIRECTORY(. DIR_SRCS)
+AUX_SOURCE_DIRECTORY(./jni DIR_SRCS)
 
-#set environment variable
-SET(
-    SMT_HOME $(shell pwd)
-)
+set(CMAKE_BUILD_TYPE "Debug")
 
 SET(
-	FFMPEG_LIBS
-	libswresample.so
-	libavcodec.so
-	libavutil.so
-	libavformat.so
-	libavfilter.so
-	libswscale.so
+	FFMPEG_SHARED_LIBS
 	libavdevice.so
+	libavfilter.so
+	libavformat.so
+	libavcodec.so
+	libpostproc.so
+	libswresample.so
+	libswscale.so
+	libavutil.so
 )
+
+SET(
+	FFMPEG_STATIC_LIBS
+	libavdevice.a
+	libavfilter.a
+	libavformat.a
+	libavcodec.a
+	libpostproc.a
+	libswresample.a
+	libswscale.a
+	libavutil.a
+)
+
+SET(
+	SYSTEM_LIBS
+	-lpthread
+	-lm
+	-lz
+	-lGLESv2
+	-lglut
+	-lXv
+	-lX11
+	-lXext
+	-lva
+	-lva-x11
+	-lxcb
+	-lxcb-shm
+	-lxcb-xfixes
+	-lxcb-render
+	-lxcb-shape
+	-lxcb-shape
+	-lasound
+	-lx265
+	-lx264
+	-lSDL2
+)
+
+SET(
+	SMT_SRC_LIST
+	smt_player.c
+	smt_render.c
+)
+
+set(CMAKE_EXE_LINKER_FLAGS "-Wl,-rpath=${CMAKE_CURRENT_SOURCE_DIR}/gen/lib")
+set(CMAKE_C_FLAGS "-g -Wall -fPIC -std=c99 -O0")
 
 #add executable file
-ADD_EXECUTABLE(smt-player smt_player.c)
+ADD_EXECUTABLE(smt-player ${SMT_SRC_LIST})
+
+#add library file
+#ADD_LIBRARY(smt-player SHARED ${SMT_SRC_LIST})
 
 #add link library
 TARGET_LINK_LIBRARIES(
     smt-player
-    ${FFMPEG_LIBS}
+    ${FFMPEG_STATIC_LIBS}
+    ${SYSTEM_LIBS}
 )
+
+
 
 #add definition
 add_definitions(
-	-Wall
-	-Wl,-rpath=lib
+	-DSMT
+	-DDebug
+    -D_GNU_SOURCE=1 
+    -D_REENTRANT
 )
