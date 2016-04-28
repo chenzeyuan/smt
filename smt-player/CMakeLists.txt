@@ -9,13 +9,13 @@ SET(CMAKE_C_COMPILER "gcc")
 
 #head file path
 INCLUDE_DIRECTORIES(
-    gen/include
+    jni/gen/include
     /usr/include
 )
 
 #add link lirarries path
 LINK_DIRECTORIES(
-    gen/lib
+    jni/gen/lib
     /usr/lib/x86_64-linux-gnu
 )
 
@@ -72,20 +72,14 @@ SET(
 	-lSDL2
 )
 
-SET(
-	SMT_SRC_LIST
-	smt_player.c
-	smt_render.c
-)
-
 set(CMAKE_EXE_LINKER_FLAGS "-Wl,-rpath=${CMAKE_CURRENT_SOURCE_DIR}/gen/lib")
 set(CMAKE_C_FLAGS "-g -Wall -fPIC -std=c99 -O0")
 
 #add executable file
-ADD_EXECUTABLE(smt-player ${SMT_SRC_LIST})
+ADD_EXECUTABLE(smt-player ${DIR_SRCS})
 
 #add library file
-#ADD_LIBRARY(smt-player SHARED ${SMT_SRC_LIST})
+#ADD_LIBRARY(smt-player SHARED ${DIR_SRCS})
 
 #add link library
 TARGET_LINK_LIBRARIES(
