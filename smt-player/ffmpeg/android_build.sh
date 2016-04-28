@@ -20,7 +20,7 @@ function build_one
     $ADDITIONAL_CONFIGURE_FLAG
 }  
 CPU=arm  
-PREFIX=$(pwd | xargs dirname)/player/app/libs
+PREFIX=$(pwd | xargs dirname)/jni/gen
 ADDI_CFLAGS="-marm -DSMT_ANDROID"  
 build_one  
 
