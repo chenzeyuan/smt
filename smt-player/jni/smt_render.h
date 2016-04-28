@@ -6,10 +6,12 @@
 #include <android/log.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
-#include "libavutil/log.h"
 #else
 #include <GL/glut.h>
 #endif
+
+#include "libavutil/log.h"
+
 
 extern const AVClass opengl_class;
 
