@@ -1,6 +1,4 @@
 LOCAL_PATH := $(call my-dir)
-include $(CLEAR_VARS)
-
 FFMPEG_LIBS_PATH := $(LOCAL_PATH)/gen/lib
 
 include $(CLEAR_VARS)  
@@ -38,8 +36,8 @@ LOCAL_MODULE := libavutil
 LOCAL_SRC_FILES :=  $(FFMPEG_LIBS_PATH)/libavutil.so  
 include $(PREBUILT_SHARED_LIBRARY)
 
-
-LOCAL_MODULE := aaaa
+include $(CLEAR_VARS)
+LOCAL_MODULE := smt_player
 LOCAL_CFLAGS    := -fPIC -Werror -UNDEBUG -D_DEBUG
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/gen/include
 LOCAL_SRC_FILES := smt_player.c \

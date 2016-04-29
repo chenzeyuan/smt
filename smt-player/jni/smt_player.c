@@ -6,8 +6,8 @@
 /********
 // definition
 ********/
-#define USE_OPENGL 0
-#define USE_SDL 1
+#define USE_OPENGL 1
+#define USE_SDL 0
 #define VIDEO_PICTURE_QUEUE_SIZE 3
 #define SAMPLE_QUEUE_SIZE 9
 #define FRAME_QUEUE_SIZE FFMAX(SAMPLE_QUEUE_SIZE, VIDEO_PICTURE_QUEUE_SIZE)
@@ -474,9 +474,11 @@ static void* smt_video_display_thread(void *arg)
     gl_ctx.av_class = &opengl_class;
     gl_ctx.width = is->smt_width;
     gl_ctx.height = is->smt_height;
+#if !defined(__ANDROID__)
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(is->smt_width, is->smt_height);
     window = glutCreateWindow("");
+#endif
     if(!smt_gl_setup(&gl_ctx, AV_PIX_FMT_YUV420P)){
         av_log(NULL, AV_LOG_INFO, "gl render failed.\n");
         return NULL;
