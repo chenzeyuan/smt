@@ -24,7 +24,7 @@ static void smt_check_error(SMTRenderContext *h, const char* msg)
             av_log(h, AV_LOG_FATAL, "GL internal error in function %s. error code: 0x%x\n", msg, err);
     }while(err);
 }
-#if 0
+
 
 static GLuint smt_create_shader(SMTRenderContext *h, GLenum shaderType, const char* pSource)
 {
@@ -277,5 +277,3 @@ void smt_gl_draw(SMTRenderContext *h, enum AVPixelFormat fmt, GLsizei width, GLs
     smt_check_error(h, "glDrawArrays");  
 
 }
-
-#endif

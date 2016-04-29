@@ -53,7 +53,7 @@ SET(
 	-lpthread
 	-lm
 	-lz
-	-lGLESv2
+	-lGL
 	-lglut
 	-lXv
 	-lX11
