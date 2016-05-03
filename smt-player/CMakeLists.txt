@@ -9,18 +9,18 @@ SET(CMAKE_C_COMPILER "gcc")
 
 #head file path
 INCLUDE_DIRECTORIES(
-    jni/gen/include
+    gen/include
     /usr/include
 )
 
 #add link lirarries path
 LINK_DIRECTORIES(
-    jni/gen/lib
+    android/jni/gen/lib
     /usr/lib/x86_64-linux-gnu
 )
 
 #source directory
-AUX_SOURCE_DIRECTORY(./jni DIR_SRCS)
+AUX_SOURCE_DIRECTORY(./android/jni DIR_SRCS)
 
 set(CMAKE_BUILD_TYPE "Debug")
 
