@@ -15,7 +15,7 @@ INCLUDE_DIRECTORIES(
 
 #add link lirarries path
 LINK_DIRECTORIES(
-    android/jni/gen/lib
+    gen/lib
     /usr/lib/x86_64-linux-gnu
 )
 
