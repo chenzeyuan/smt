@@ -13,7 +13,7 @@ mkdir -p $PREFIX
     --disable-ffserver \
     --enable-cross-compile \
     --cross-prefix=$TOOLCHAIN/bin/arm-linux-androideabi- \
-    --target-os=linux \
+    --target-os=android \
     --arch=arm \
     --sysroot=$SYSTEMROOT \
     --extra-cflags="-Os -fpic $ADDI_CFLAGS" \
