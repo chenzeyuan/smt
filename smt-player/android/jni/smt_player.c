@@ -939,7 +939,7 @@ int main(int argc, char** argv){
 }
 
 //jni interface
-void Java_org_sjtu_nerdtv_smt_nativeinterface_SmtNativeEntity_play(JNIEnv * env, jobject obj)
+void Java_org_sjtu_nerdtv_smt_smtNative_play(JNIEnv * env, jobject obj)
 {
     char *program_name = "smtplayer";
     av_log(NULL, AV_LOG_WARNING, "start up program smt player!!!!");
