@@ -53,6 +53,11 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 #define BACKTRACE_LOGLEVEL AV_LOG_ERROR
 #endif
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
+
 static int av_log_level = AV_LOG_INFO;
 static int flags;
 
@@ -292,6 +297,23 @@ void av_log_format_line(void *ptr, int level, const char *fmt, va_list vl,
 
 void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
 {
+#if defined(__ANDROID__)
+    int android_level;
+    switch(level){
+        case AV_LOG_ERROR:
+            android_level = ANDROID_LOG_ERROR;
+            break;
+        case AV_LOG_WARNING:
+            android_level = ANDROID_LOG_WARN;
+            break;
+        case AV_LOG_FATAL:
+            android_level = ANDROID_LOG_FATAL;
+            break;
+        default:
+            android_level = ANDROID_LOG_INFO;
+    }
+    __android_log_print(android_level, ptr, fmt, vl);
+#else
     static int print_prefix = 1;
     static int count;
     static char prev[LINE_SZ];
@@ -349,6 +371,7 @@ end:
     av_bprint_finalize(part+3, NULL);
 #if HAVE_PTHREADS
     pthread_mutex_unlock(&mutex);
+#endif
 #endif
 }
 
