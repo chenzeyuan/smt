@@ -581,6 +581,18 @@ static int opt_recording_timestamp(void *optctx, const char *opt, const char *ar
     return 0;
 }
 
+static int opt_begintime(void *optctx, const char *opt, const char *arg)
+{
+    char buf[128];
+    int64_t begintime = parse_time_or_die(opt, arg, 0) / 1E3;
+    int64_t recording_timestamp = begintime / 1E3;
+    struct tm time = *gmtime((time_t*)&recording_timestamp);
+    if (!strftime(buf, sizeof(buf), "begintime=%Y-%m-%dT%H:%M:%S%z", &time))
+        return -1;
+    av_log(NULL, AV_LOG_INFO, "    <<smt>> %s is %s.\n", opt, arg);
+    return 0;
+}
+
 static AVCodec *find_codec_or_die(const char *name, enum AVMediaType type, int encoder)
 {
     const AVCodecDescriptor *desc;
@@ -3151,6 +3163,8 @@ const OptionDef options[] = {
         "set the input ts scale", "scale" },
     { "timestamp",      HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_recording_timestamp },
         "set the recording timestamp ('now' to set the current time)", "time" },
+    { "begintime",      HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_begintime },
+        "set the begintime of smt ('now' to set the current time)", "time" },
     { "metadata",       HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(metadata) },
         "add metadata", "string=string" },
     { "program",        HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(program) },
