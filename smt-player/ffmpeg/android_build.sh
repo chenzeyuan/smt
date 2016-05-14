@@ -1,6 +1,15 @@
-#!/bin/bash  
-SYSTEMROOT=$NDK_HOME/platforms/android-24/arch-arm/  
+#!/bin/bash 
+if [ $NDK_VERSION = "r10e" ]; then
+SDK_VERSION=18
+elif [ $NDK_VERSION = "r11c" ]; then
+SDK_VERSION=23
+fi
+ 
+SYSTEMROOT=$NDK_HOME/platforms/android-$SDK_VERSION/arch-arm/  
 TOOLCHAIN=$NDK_HOME/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64  
+
+echo $SYSTEMROOT
+echo $TOOLCHAIN
   
 function build_one  
 { 
