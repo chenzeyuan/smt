@@ -30,3 +30,18 @@
 
 # Debug files
 *.dSYM/
+*.d
+*.pc
+smt-player/ffmpeg/doc
+smt-player/ffmpeg/.config
+smt-player/ffmpeg/config.log
+smt-player/ffmpeg/ffmpeg
+smt-player/ffmpeg/ffmpeg_g
+smt-player/ffmpeg/config.asm
+smt-player/ffmpeg/config.fate
+smt-player/ffmpeg/config.h
+smt-player/ffmpeg/config.mak
+smt-player/ffmpeg/doc/config.texi
+smt-player/ffmpeg/libavutil/ffversion.h
+#
+#
