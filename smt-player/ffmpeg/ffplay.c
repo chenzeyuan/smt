@@ -110,7 +110,7 @@ const int program_birth_year = 2003;
 static unsigned sws_flags = SWS_BICUBIC;
 
 #define MAX_SCREEN_FLOWS  8
-#define SUB_SCREEN_BORDER_SIZE  20
+#define SUB_SCREEN_BORDER_SIZE  50
 
 typedef struct MyAVPacketList {
     AVPacket pkt;
@@ -315,10 +315,10 @@ static const char *input_filename[MAX_SCREEN_FLOWS];
 static int nb_input_files = -1;
 static int main_screen = 0;
 static const char *window_title;
-static int default_width  = 640;
-static int default_height = 480;
-static int screen_width  = 0;
-static int screen_height = 0;
+static int default_width  = 3840;
+static int default_height = 2160;
+static int screen_width  = 3840;
+static int screen_height = 2160;
 static int audio_disable;
 static int video_disable;
 static int subtitle_disable;
@@ -358,6 +358,8 @@ static int is_full_screen;
 static int64_t audio_callback_time;
 
 static AVPacket flush_pkt;
+
+static int is_second_display = 0;
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
@@ -1292,16 +1294,32 @@ static int video_open(VideoState *is)
         int flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
         if (!window_title)
             window_title = is->filename;
-        if (main_screen == is->idx_screen) {
-            //flags |= SDL_WINDOW_FULLSCREEN;
-            window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
-            is->width  = w;
-            is->height = h;
+
+        if(is_second_display) {
+            if (main_screen == is->idx_screen) {
+                //flags |= SDL_WINDOW_FULLSCREEN;
+                window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
+                is->width  = w;
+                is->height = h;
+            }
+            else {
+                window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
+                is->width  = w *3/8;
+                is->height = h *3/8;
+            }
         }
         else {
-            window[is->idx_screen] = SDL_CreateWindow("", (w/4 + SUB_SCREEN_BORDER_SIZE) * (is->idx_screen - 1) + SUB_SCREEN_BORDER_SIZE , SUB_SCREEN_BORDER_SIZE , w /4 , h/4,  flags); 
-            is->width  = w/4 ;
-            is->height = h/4 ;
+            if (main_screen == is->idx_screen) {
+                //flags |= SDL_WINDOW_FULLSCREEN;
+                window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
+                is->width  = w;
+                is->height = h;
+            }
+            else {
+                window[is->idx_screen] = SDL_CreateWindow("", w/2 + 2*SUB_SCREEN_BORDER_SIZE, (h/4 + SUB_SCREEN_BORDER_SIZE) * (is->idx_screen - 1) + SUB_SCREEN_BORDER_SIZE , w / 4 , h/4,  flags); 
+                is->width  = w/4 ;
+                is->height = h/4 ;
+            }
         }
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
@@ -2602,7 +2620,7 @@ static int stream_component_open(VideoState *is, int stream_index)
         if ((ret = decoder_start(&is->auddec, audio_thread, is)) < 0)
             goto fail;
 
-        if(is->idx_screen != 0)
+        if(is->idx_screen != 0 && !is_second_display)
             is->muted = 1;
 
         SDL_PauseAudioDevice(is->audio_tgt.devID, 0); 
@@ -3224,9 +3242,16 @@ static void event_loop(VideoState *cur_stream[])
                 toggle_full_screen(cur_stream[main_screen]);
                 cur_stream[main_screen]->force_refresh = 1;
                 break;
+            case SDLK_s:
+                for(int i = 0; i <= nb_input_files; i++)
+                    toggle_pause(cur_stream[i]);
+                break;
             case SDLK_p:
+                toggle_pause(cur_stream[0]);
+                break;
             case SDLK_SPACE:
-                toggle_pause(cur_stream[main_screen]);
+                for(int i = 1; i<=nb_input_files; i++)
+                    toggle_pause(cur_stream[i]);
                 break;
             case SDLK_m:
                 toggle_mute(cur_stream[main_screen]);
@@ -3236,17 +3261,19 @@ static void event_loop(VideoState *cur_stream[])
                 break;  
                 // 9 means all the screens
             case SDLK_9:
+                if(is_second_display) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
                     int j = (i < main_screen) ? 0 : 1;
-                    SDL_SetWindowPosition(window[i], (default_width/4 + SUB_SCREEN_BORDER_SIZE) * (i - j) + SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                    SDL_SetWindowPosition(window[i], default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
                 }
                 break;                
             case SDLK_0:
+                if(is_second_display) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );                
                 if(0 == main_screen)  break;
@@ -3254,60 +3281,40 @@ static void event_loop(VideoState *cur_stream[])
                 SDL_RaiseWindow( window[0] );
                 break;
             case SDLK_1:
+                if(is_second_display) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
                 if(nb_input_files < 1 || 1 == main_screen)  break;
-                SDL_SetWindowPosition(window[1], SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                SDL_SetWindowPosition(window[1], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, 4*SUB_SCREEN_BORDER_SIZE);
                 SDL_ShowWindow( window[1]);                
                 SDL_RaiseWindow( window[1] );
                 break;
             case SDLK_2:      
+                if(is_second_display) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
                 if(nb_input_files < 2 || 2 == main_screen)  break;
-                SDL_SetWindowPosition(window[2], SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                SDL_SetWindowPosition(window[2], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, 4*SUB_SCREEN_BORDER_SIZE);
                 SDL_ShowWindow( window[2]);                
                 SDL_RaiseWindow( window[2] );
                 break; 
             case SDLK_3:    
+                if(is_second_display) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
                 if(nb_input_files < 3 || 3 == main_screen)  break;
-                SDL_SetWindowPosition(window[3], SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                SDL_SetWindowPosition(window[3], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, 4*SUB_SCREEN_BORDER_SIZE);
                 SDL_ShowWindow( window[3]);                
                 SDL_RaiseWindow( window[3] );
                 break; 
             case SDLK_4:
-                 break;
-                {
-                    int w,h;
 
-                    if (screen_width) {
-                        w = screen_width;
-                        h = screen_height;
-                    } else {
-                        w = default_width;
-                        h = default_height;
-                    }
-                 SDL_SetWindowFullscreen(window[1], SDL_WINDOW_FULLSCREEN_DESKTOP);
-                //int w,h;
-                //SDL_GetRendererOutputSize(renderer[1],  &w, &h);
-
-                cur_stream[1]->width = screen_width;
-                cur_stream[1]->height = screen_height;
-                cur_stream[1]->force_refresh = 1;
-
-                SDL_SetWindowFullscreen(window[0], 0);
-                SDL_SetWindowPosition(window[0], w *3/4 - SUB_SCREEN_BORDER_SIZE, 0);
-
-                SDL_SetWindowSize (window[0], w /4 , h /4);
-                cur_stream[0]->width = w /4 ;
-                cur_stream[0]->height = h /4;
-                cur_stream[0]->force_refresh = 1;
                 break;
-                }
 
           case SDLK_5: 
+                if(is_second_display) { 
+                    break; 
+                } 
                 if(main_screen == 0)  break;
                 cur_stream[main_screen]->muted = 1;                
                 cur_stream[0]->muted = 0;
@@ -3319,7 +3326,7 @@ static void event_loop(VideoState *cur_stream[])
                     if (i == main_screen) continue;   
                     int j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
-                    SDL_SetWindowPosition(window[i], (default_width/4 + SUB_SCREEN_BORDER_SIZE) * (i - j) + SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                    SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
                 }   
@@ -3327,6 +3334,11 @@ static void event_loop(VideoState *cur_stream[])
                 break;
            case SDLK_6: 
                 if(nb_input_files < 1)  break;
+                if(is_second_display) {
+		    SDL_ShowWindow( window[1]);                
+		    SDL_RaiseWindow( window[1] );  
+                    break; 
+                } 
                 cur_stream[main_screen]->muted = 1;                
                 cur_stream[1]->muted = 0;
                 switch_full_screen(cur_stream[1]);
@@ -3337,7 +3349,7 @@ static void event_loop(VideoState *cur_stream[])
                     if (i == main_screen) continue;   
                     int j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
-                    SDL_SetWindowPosition(window[i], (default_width/4 + SUB_SCREEN_BORDER_SIZE) * (i - j) + SUB_SCREEN_BORDER_SIZE, SUB_SCREEN_BORDER_SIZE);
+                    SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
                 }   
@@ -3345,6 +3357,11 @@ static void event_loop(VideoState *cur_stream[])
                 break;
             case SDLK_7:     
                 if(nb_input_files < 2)  break;
+                if(is_second_display) {
+		    SDL_ShowWindow( window[2]);                
+		    SDL_RaiseWindow( window[2] );  
+                    break; 
+                } 
                 cur_stream[main_screen]->muted = 1;                
                 cur_stream[2]->muted = 0;
                 switch_full_screen(cur_stream[2]);
@@ -3355,13 +3372,20 @@ static void event_loop(VideoState *cur_stream[])
                     if (i == main_screen) continue;   
                     int j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
-                    SDL_SetWindowPosition(window[i], (default_width/4 + SUB_SCREEN_BORDER_SIZE) * (i - j) + SUB_SCREEN_BORDER_SIZE,  SUB_SCREEN_BORDER_SIZE);
+                    SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
                 }  
+
+               
                 break;
             case SDLK_8:     
                 if(nb_input_files < 3)  break;
+                if(is_second_display) {
+		    SDL_ShowWindow( window[3]);                
+		    SDL_RaiseWindow( window[3] );  
+                    break; 
+                } 
                 cur_stream[main_screen]->muted = 1;                
                 cur_stream[3]->muted = 0;
                 switch_full_screen(cur_stream[3]);
@@ -3372,17 +3396,19 @@ static void event_loop(VideoState *cur_stream[])
                     if (i == main_screen) continue;   
                     int j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
-                    SDL_SetWindowPosition(window[i], (default_width/4 + SUB_SCREEN_BORDER_SIZE) * (i - j) + SUB_SCREEN_BORDER_SIZE,  SUB_SCREEN_BORDER_SIZE);
+                    SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
                 }  
+
+               
                 break;
             case SDLK_KP_DIVIDE:
                 update_volume(cur_stream[main_screen], -1, SDL_VOLUME_STEP);
                 break;
-            case SDLK_s: // S: Step to next frame
-                step_to_next_frame(cur_stream[main_screen]);
-                break;
+            //case SDLK_s: // S: Step to next frame
+           //     step_to_next_frame(cur_stream[main_screen]);
+           //     break;
             case SDLK_a:
                 stream_cycle_channel(cur_stream[main_screen], AVMEDIA_TYPE_AUDIO);
                 break;
@@ -3411,18 +3437,54 @@ static void event_loop(VideoState *cur_stream[])
 #endif
                 break;
             case SDLK_PAGEUP:
-                if (cur_stream[main_screen]->ic->nb_chapters <= 1) {
-                    incr = 600.0;
-                    goto do_seek;
-                }
-                seek_chapter(cur_stream[main_screen], 1);
+                if(is_second_display) {
+                    if(main_screen == 0) {
+                         main_screen = 1;
+                         SDL_ShowWindow( window[1]);                
+		         SDL_RaiseWindow( window[1] );
+                    }  
+                    else if(main_screen == 1) {
+                         main_screen = 3;
+                         SDL_ShowWindow( window[3]);                
+		         SDL_RaiseWindow( window[3] );
+                    }  
+                    else if(main_screen == 2) {
+                         main_screen = 1;
+                         SDL_ShowWindow( window[1]);                
+		         SDL_RaiseWindow( window[1] );
+                    }  
+                    else if(main_screen == 3) {
+                         main_screen = 2;
+                         SDL_ShowWindow( window[2]);                
+		         SDL_RaiseWindow( window[2] );
+                    }  
+                    break; 
+                } 
                 break;
             case SDLK_PAGEDOWN:
-                if (cur_stream[main_screen]->ic->nb_chapters <= 1) {
-                    incr = -600.0;
-                    goto do_seek;
-                }
-                seek_chapter(cur_stream[main_screen], -1);
+                if(is_second_display) {
+                    if(main_screen == 0) {
+                         main_screen = 1;
+                         SDL_ShowWindow( window[1]);                
+		         SDL_RaiseWindow( window[1] );
+                    }  
+                    else if(main_screen == 1) {
+                         main_screen = 2;
+                         SDL_ShowWindow( window[2]);                
+		         SDL_RaiseWindow( window[2] );
+                    }  
+                    else if(main_screen == 2) {
+                         main_screen = 3;
+                         SDL_ShowWindow( window[3]);                
+		         SDL_RaiseWindow( window[3] );
+                    }  
+                    else if(main_screen == 3) {
+                         main_screen = 1;
+                         SDL_ShowWindow( window[1]);                
+		         SDL_RaiseWindow( window[1] );
+                    }  
+                    break; 
+                } 
                 break;
             case SDLK_LEFT:
                 incr = -10.0;
@@ -3683,6 +3745,8 @@ static const OptionDef options[] = {
     { "scodec", HAS_ARG | OPT_STRING | OPT_EXPERT, { &subtitle_codec_name }, "force subtitle decoder", "decoder_name" },
     { "vcodec", HAS_ARG | OPT_STRING | OPT_EXPERT, {    &video_codec_name }, "force video decoder",    "decoder_name" },
     { "autorotate", OPT_BOOL, { &autorotate }, "automatically rotate video", "" },
+    // for the second display    
+    { "second", OPT_BOOL, { &is_second_display}, "display as the second TV" },
     { NULL, },
 };
 
