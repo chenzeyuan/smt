@@ -1336,7 +1336,7 @@ static int video_open(VideoState *is)
                 }
             }
             else {
-                window[is->idx_screen] = SDL_CreateWindow("", w/2 + 2*SUB_SCREEN_BORDER_SIZE, (h/4 + SUB_SCREEN_BORDER_SIZE) * (is->idx_screen - 1) + SUB_SCREEN_BORDER_SIZE , w / 4 , h/4,  flags); 
+                window[is->idx_screen] = SDL_CreateWindow("", default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (is->idx_screen - 1) + 4 * SUB_SCREEN_BORDER_SIZE , w / 4 , h/4,  flags); 
                 is->width  = w/4 ;
                 is->height = h/4 ;
 
@@ -1354,7 +1354,7 @@ static int video_open(VideoState *is)
                     for(int i = 0 ; i <= nb_input_files; i++) {  
                         if (i == main_screen) continue;   
                         int j = (i < main_screen) ? 0 : 1;
-                        SDL_SetWindowPosition(window[i], default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
+                        SDL_SetWindowPosition(window[i], default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4 * SUB_SCREEN_BORDER_SIZE);
                         SDL_ShowWindow( window[i]);                
                         SDL_RaiseWindow( window[i] );
                     }
