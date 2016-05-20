@@ -1314,11 +1314,51 @@ static int video_open(VideoState *is)
                 window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
                 is->width  = w;
                 is->height = h;
+
+                // to check if need to refresh, so as to show all of them.
+                int show = 1;
+                for(int i = 1 ; i <= nb_input_files; i++) {
+                    if(!window[i]){
+                        show = 0;
+                        break;
+                    }
+                }
+                if(show){
+                    SDL_ShowWindow( window[main_screen]);                
+                    SDL_RaiseWindow( window[main_screen] );
+                    for(int i = 0 ; i <= nb_input_files; i++) {  
+                        if (i == main_screen) continue;   
+                        int j = (i < main_screen) ? 0 : 1;
+                        SDL_SetWindowPosition(window[i], default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
+                        SDL_ShowWindow( window[i]);                
+                        SDL_RaiseWindow( window[i] );
+                    }
+                }
             }
             else {
                 window[is->idx_screen] = SDL_CreateWindow("", w/2 + 2*SUB_SCREEN_BORDER_SIZE, (h/4 + SUB_SCREEN_BORDER_SIZE) * (is->idx_screen - 1) + SUB_SCREEN_BORDER_SIZE , w / 4 , h/4,  flags); 
                 is->width  = w/4 ;
                 is->height = h/4 ;
+
+                // to check if need to refresh, so as to show all of them.
+                int show = 1;
+                for(int i = 0 ; i <= nb_input_files; i++) {
+                    if(!window[i]) {
+                        show = 0;
+                        break;
+                     }
+                }
+                if(show){
+                    SDL_ShowWindow( window[main_screen]);                
+                    SDL_RaiseWindow( window[main_screen] );
+                    for(int i = 0 ; i <= nb_input_files; i++) {  
+                        if (i == main_screen) continue;   
+                        int j = (i < main_screen) ? 0 : 1;
+                        SDL_SetWindowPosition(window[i], default_width * 6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
+                        SDL_ShowWindow( window[i]);                
+                        SDL_RaiseWindow( window[i] );
+                    }
+                }
             }
         }
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
