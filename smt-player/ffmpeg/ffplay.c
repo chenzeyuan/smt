@@ -1317,7 +1317,7 @@ static int video_open(VideoState *is)
 
                 // to check if need to refresh, so as to show all of them.
                 int show = 1;
-                for(int i = 1 ; i <= nb_input_files; i++) {
+                for(int i = 0 ; i <= nb_input_files; i++) {
                     if(!window[i]){
                         show = 0;
                         break;
