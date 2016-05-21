@@ -3727,6 +3727,7 @@ probe_cc(){
             esac
         fi
         _cflags_speed='-O3'
+        _cflags_noopt='-O0'
         _cflags_size='-Os'
     elif $_cc --version 2>/dev/null | grep -q ^icc; then
         _type=icc
