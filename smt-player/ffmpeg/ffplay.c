@@ -62,11 +62,15 @@
 
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
-
+extern int64_t begin_time; 
+extern char* begin_time_key[];
+extern int64_t begin_time_value[];
 #define MAX_QUEUE_SIZE (15 * 1024 * 1024)
 #define MIN_FRAMES 25
 #define EXTERNAL_CLOCK_MIN_FRAMES 2
 #define EXTERNAL_CLOCK_MAX_FRAMES 10
+#define INPUT_URL_NUM_MAX 100
+int media_status[INPUT_URL_NUM_MAX];//0:   1:initialed 2:started
 
 /* Minimum SDL audio buffer size, in samples. */
 #define SDL_AUDIO_MIN_BUFFER_SIZE 512
@@ -309,6 +313,7 @@ typedef struct VideoState {
     SDL_cond *continue_read_thread;
 } VideoState;
 
+
 /* options specified by the user */
 static AVInputFormat *file_iformat;
 static const char *input_filename[MAX_SCREEN_FLOWS];
@@ -365,6 +370,7 @@ static int is_second_display = 0;
 
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
+
 
 #if CONFIG_AVFILTER
 static int opt_add_vfilter(void *optctx, const char *opt, const char *arg)
@@ -3220,12 +3226,26 @@ static void refresh_loop_wait_event(VideoState *is[], SDL_Event *event) {
             SDL_ShowCursor(0);
             cursor_hidden = 1;
         }
-        if (remaining_time > 0.0)
+        if (remaining_time > 0.0) {
             av_usleep((int64_t)(remaining_time * 1000000.0));
+        }
         remaining_time = REFRESH_RATE;
         for(int i = 0 ; i <= nb_input_files; i++) {            
-            if (is[i]->show_mode != SHOW_MODE_NONE && (!is[i]->paused || is[i]->force_refresh))
-            video_refresh(is[i], &remaining_time);            
+            if( i == 0 && 1 == is_second_display) {
+                continue;
+            }
+            if(0 != begin_time_value[i]  && media_status[i] != 2) {
+                int64_t time_now = av_gettime();
+                if(time_now > begin_time_value[i] * 1000) {
+                    toggle_pause(is[i]);
+                    media_status[i] = 2;
+                }
+            }
+
+            if (2 == media_status[i] && is[i]->show_mode != SHOW_MODE_NONE 
+                    && (!is[i]->paused || is[i]->force_refresh)) {
+                video_refresh(is[i], &remaining_time);            
+            }
         }
         SDL_PumpEvents();
     }
@@ -3263,6 +3283,12 @@ static void event_loop(VideoState *cur_stream[])
 {
     SDL_Event event;
     double incr, pos, frac;
+    for(int i = 0; i <= nb_input_files; i++) {
+        if( i == 0 && 1 == is_second_display) {
+            continue;
+        }
+        toggle_pause(cur_stream[i]);
+    }
 
     for (;;) {
         double x;
@@ -3915,6 +3941,9 @@ int main(int argc, char **argv)
     flush_pkt.data = (uint8_t *)&flush_pkt;
 
     for(int i = 0; i <= nb_input_files; i++) {
+        begin_time_key[i] = (char*)malloc(strlen(input_filename[i])+1);
+        strcpy(begin_time_key[i], input_filename[i]);
+        media_status[i] = 1;
         is[i] = stream_open(input_filename[i], file_iformat);
         if (!is[i]) {
             av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");

@@ -43,5 +43,11 @@ smt-player/ffmpeg/config.h
 smt-player/ffmpeg/config.mak
 smt-player/ffmpeg/doc/config.texi
 smt-player/ffmpeg/libavutil/ffversion.h
+ffplay
+ffplay_g
+ffprobe
+ffprobe_g
+ffserver
+ffserver_g
 #
 #

@@ -27,7 +27,29 @@ static int				moof_index;
 static int				sample_index;
 #endif
 
+#define INPUT_URL_NUM_MAX 100
 extern smt_callback     smt_callback_entity;
+//for ffmpeg
+int64_t begin_time = 0;
+//for ffplay
+char*   begin_time_key[INPUT_URL_NUM_MAX];
+int64_t begin_time_value[INPUT_URL_NUM_MAX ];
+
+static int get_index_of_input_url(char* key) {
+    if(NULL == key) return -1;
+    int foundindex = -1;
+    for(int i = 0; i < INPUT_URL_NUM_MAX; i++) {
+        if(begin_time_key[i] == NULL) {
+            break;
+        } else {
+            if(0 == strcmp(begin_time_key[i], key)) {
+                foundindex = i;
+                break;
+            }
+        }
+    }
+    return foundindex;
+}
 
 
 static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
@@ -395,6 +417,19 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
+                    int index = get_index_of_input_url(h->filename);
+                    if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
+                        int64_t now_time_us =  av_gettime();
+                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
+                        struct tm today_zero_time = *localtime(&now_time_s);
+                        today_zero_time.tm_hour = 0;
+                        today_zero_time.tm_min  = 0;
+                        today_zero_time.tm_sec  = 0;
+                        time_t time_zero_s = mktime(&today_zero_time);
+                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
+                        begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
+                    }
+
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
@@ -1227,9 +1262,14 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         memset(pld->data, 0, MTU);
 		pkt->packet_counter = snd->pkt_counter;
         pkt->packet_sequence_number = snd->pkt_seq[snd->asset];
-        time_t t;
-        time(&t);
-        pkt->timestamp = t;
+        int64_t now_time =  av_gettime_relative();
+        static int64_t first_time = 0;
+        if( 0 == first_time ) {
+            first_time = now_time;
+        }
+        //time_t t;
+        //time(&t);
+        pkt->timestamp =  begin_time + (now_time - first_time)/1000 ;
 		smt_assemble_packet_header(h, snd, pld->data, pkt);
 
         if(position > 0){
