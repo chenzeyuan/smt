@@ -3923,6 +3923,11 @@ int main(int argc, char **argv)
         is[i]->idx_screen= i;
         is[i]->filename = input_filename[i];
         //SDL_CreateThread(video_display_thread, "sub video display", is[i]);
+
+        // SDL2 seems to have bug when several windows start in different threads at the same time
+        // the behavior is the SDL_Create_Windows return success while window is black or empty
+        // so i force to sleep to leave enough time for a SDL window draw
+        av_usleep((int64_t)(500000.0));
     }
 
     event_loop(is);
