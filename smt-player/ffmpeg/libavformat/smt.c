@@ -595,7 +595,7 @@ static int smt_close(URLContext *h)
     closesocket(s->smt_fd);
 
     s->generate_thread_run = 0;
-#ifndef SMT_ANDROID
+#ifndef __ANDROID__
     pthread_cancel(s->mpu_generate_thread);
 #endif
     ret = pthread_join(s->mpu_generate_thread, NULL);

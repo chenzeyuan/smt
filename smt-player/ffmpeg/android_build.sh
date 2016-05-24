@@ -19,7 +19,7 @@ echo $SYSTEMROOT
 echo $TOOLCHAIN
 
 CPU=arm  
-PREFIX=$(pwd | xargs dirname)/android/jni/gen
+PREFIX=$(pwd | xargs dirname)/SMTPlayer/player/jni/gen
 CONFIG_FLAG="--prefix=$PREFIX \
 	--enable-shared \
 	--disable-static \
