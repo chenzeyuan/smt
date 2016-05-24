@@ -671,7 +671,7 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
 
 static int64_t smt_get(URLContext *h, AVDictionary **options)
 {
-    uint64_t play_tm = 110;
+    uint64_t play_tm = 0;
     char s_play_tm[20] = {"\0"}; //max number is 18446744073709551615 for decimal number
     /*
         TBD
