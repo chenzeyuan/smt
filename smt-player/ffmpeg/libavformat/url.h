@@ -76,6 +76,7 @@ typedef struct URLProtocol {
     int     (*url_read)( URLContext *h, unsigned char *buf, int size);
     int     (*url_write)(URLContext *h, const unsigned char *buf, int size);
     int64_t (*url_set)(URLContext *h, AVDictionary *options); //add for smt
+    int64_t (*url_get)(URLContext *h, AVDictionary **options); //add for smt
     int64_t (*url_seek)( URLContext *h, int64_t pos, int whence);
     int     (*url_close)(URLContext *h);
     struct URLProtocol *next;
@@ -203,6 +204,17 @@ int ffurl_write(URLContext *h, const unsigned char *buf, int size);
  */
 
 int64_t ffurl_set(URLContext *h, AVDictionary *options); 
+
+/**
+ * get option if needed. used for smt protocol now. 
+ * in the future can be extended for other protocol
+ *
+ * @return the number of bytes actually written, or a negative value
+ * corresponding to an AVERROR code in case of failure
+ */
+
+int64_t ffurl_get(URLContext *h, AVDictionary **options);
+
 
 
 /**
