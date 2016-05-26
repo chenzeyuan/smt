@@ -3,7 +3,7 @@
 function smt_configure  
 { 
 #mkdir -p $PREFIX
-./configure $CONFIG_FLAG --extra-cflags="$CONFIG_EXTRA_FLAG" --extra-ldflags="$CONFIG_LD_FLAG"
+./configure $CONFIG_FLAG --extra-cflags="$CONFIG_EXTRA_FLAG" --extra-ldflags="$CONFIG_LD_FLAG -llog"
 }  
  
 SYSTEMROOT=$NDK_HOME/platforms/android-$SDK_VERSION/arch-arm/  
@@ -22,7 +22,7 @@ CONFIG_FLAG="--prefix=$SYSTEMROOT/usr
 	--disable-ffserver \
 	--enable-cross-compile \
 	--cross-prefix=$TOOLCHAIN/bin/arm-linux-androideabi- \
-	--target-os=linux \
+	--target-os=android \
 	--enable-pic"
 if [ "$1" = "armv5" ]; then
 CONFIG_FLAG="$CONFIG_FLAG --arch=arm"
