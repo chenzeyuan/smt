@@ -10,6 +10,13 @@ android {
         targetSdkVersion 23
         versionCode 1
         versionName "1.0"
+
+        ndk {
+            moduleName "smt_player"
+            abiFilters "armeabi", "armeabi-v7a"
+            cFlags "-fPIC -Werror"
+            ldLibs "log", "GLESv1_CM", "GLESv2", "log", "jnigraphics", "z", "OpenSLES", "avformat", "avdevice", "avfilter", "avcodec", "swscale", "swresample", "avutil"
+        }
     }
     buildTypes {
         release {
@@ -19,10 +26,6 @@ android {
         debug {
             jniDebuggable true
         }
-    }
-
-    sourceSets.main {
-        jniLibs.srcDirs=['libs']
     }
 }
 

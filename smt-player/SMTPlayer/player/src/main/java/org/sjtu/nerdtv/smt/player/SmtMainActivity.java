@@ -7,6 +7,10 @@ import org.sjtu.nerdtv.smt.player.jni.SmtNativeApi;
 
 public class SmtMainActivity extends AppCompatActivity {
 
+    static {
+        System.loadLibrary("smt_player");
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
