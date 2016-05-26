@@ -22,7 +22,7 @@ CONFIG_FLAG="--prefix=$SYSTEMROOT/usr
 	--disable-ffserver \
 	--enable-cross-compile \
 	--cross-prefix=$TOOLCHAIN/bin/arm-linux-androideabi- \
-	--target-os=android \
+	--target-os=linux \
 	--enable-pic"
 if [ "$1" = "armv5" ]; then
 CONFIG_FLAG="$CONFIG_FLAG --arch=arm"
