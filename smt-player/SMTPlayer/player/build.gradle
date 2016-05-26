@@ -12,9 +12,9 @@ android {
         versionName "1.0"
 
         ndk {
-            moduleName "smt_player"
+            moduleName "smt"
             abiFilters "armeabi", "armeabi-v7a"
-            cFlags "-fPIC -Werror"
+            cFlags "-shared -fPIC -Werror"
             ldLibs "log", "GLESv1_CM", "GLESv2", "log", "jnigraphics", "z", "OpenSLES", "avformat", "avdevice", "avfilter", "avcodec", "swscale", "swresample", "avutil"
         }
     }

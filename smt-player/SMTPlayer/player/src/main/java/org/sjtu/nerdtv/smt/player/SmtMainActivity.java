@@ -8,7 +8,7 @@ import org.sjtu.nerdtv.smt.player.jni.SmtNativeApi;
 public class SmtMainActivity extends AppCompatActivity {
 
     static {
-        System.loadLibrary("smt_player");
+        System.loadLibrary("smt");
     }
 
     @Override
