@@ -27,6 +27,19 @@ android {
             jniDebuggable true
         }
     }
+    productFlavors{
+        arm7{
+            ndk{
+                abiFilter "armeabi-v7a"
+            }
+        }
+
+        arm{
+            ndk{
+                abiFilter "armeabi"
+            }
+        }
+    }
 }
 
 dependencies {
