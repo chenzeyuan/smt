@@ -9,6 +9,14 @@ extern "C" {
 #endif
 /*
  * Class:     org_sjtu_nerdtv_smt_player_jni_SmtNativeApi
+ * Method:    getSmt
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_org_sjtu_nerdtv_smt_player_jni_SmtNativeApi_getSmt
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     org_sjtu_nerdtv_smt_player_jni_SmtNativeApi
  * Method:    play
  * Signature: ()V
  */

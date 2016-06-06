@@ -20,6 +20,10 @@ public class SmtMainActivity extends AppCompatActivity {
     }
 
    public void onClickPlay(View view) {
-        SmtNativeApi.play();
+       String id = SmtNativeApi.getSmt();
+       if(id != null){
+           System.out.print(id);
+       }
+       SmtNativeApi.play();
     }
 }

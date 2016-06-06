@@ -26,7 +26,7 @@ static SDL_Window *smt_window = NULL;
 #include "smt_render.h"
 #endif
 
-
+#define SMT_BRAND "SMTPLAYER"
 
 static AVPacket flush_pkt;
 //static const char *smt_input_filename = "smt://@:5501";
@@ -941,6 +941,11 @@ int main(int argc, char** argv){
 }
 
 //jni interface
+JNIEXPORT jstring JNICALL Java_org_sjtu_nerdtv_smt_player_jni_SmtNativeApi_getSmt(JNIEnv *env, jclass obj)
+{
+    return (*env)->NewStringUTF(env, SMT_BRAND);
+}
+
 JNIEXPORT void JNICALL Java_org_sjtu_nerdtv_smt_player_jni_SmtNativeApi_play(JNIEnv * env, jobject obj)
 {
     char *program_name = "smtplayer";
