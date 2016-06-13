@@ -28,6 +28,8 @@ static SDL_Window *smt_window = NULL;
 
 #define SMT_BRAND "SMTPLAYER"
 
+AVClass *smt_class;
+
 static AVPacket flush_pkt;
 //static const char *smt_input_filename = "smt://@:5501";
 static const char *smt_input_filename = "/mnt/sdcard/h264.mp4";
@@ -143,12 +145,12 @@ static int packet_queue_init(PacketQueue *q)
     memset(q, 0, sizeof(PacketQueue));
     ret = pthread_mutex_init(&q->mutex, NULL);
     if (ret != 0) {
-        av_log(NULL, AV_LOG_FATAL, "create packet queue mutex failed.\n");
+        av_log(&smt_class, AV_LOG_FATAL, "create packet queue mutex failed.\n");
         return AVERROR(ENOMEM);
     }
     ret = pthread_cond_init(&q->cond, NULL);
     if (ret != 0) {
-        av_log(NULL, AV_LOG_FATAL, "create packet queue mutex condition failed\n");
+        av_log(&smt_class, AV_LOG_FATAL, "create packet queue mutex condition failed\n");
         return AVERROR(ENOMEM);
     }
     q->abort_request = 1;
@@ -268,11 +270,11 @@ static int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int 
     int i;
     memset(f, 0, sizeof(FrameQueue));
     if (pthread_mutex_init(&f->mutex, NULL)) {
-        av_log(NULL, AV_LOG_FATAL, "create frame queue mutex failed\n");
+        av_log(&smt_class, AV_LOG_FATAL, "create frame queue mutex failed\n");
         return AVERROR(ENOMEM);
     }
     if (pthread_cond_init(&f->cond, NULL)) {
-        av_log(NULL, AV_LOG_FATAL, "create frame queue mutex condition failed\n");
+        av_log(&smt_class, AV_LOG_FATAL, "create frame queue mutex condition failed\n");
         return AVERROR(ENOMEM);
     }
     f->pktq = pktq;
@@ -441,7 +443,7 @@ static void* smt_video_display_thread(void *arg)
 {
     SmtState *is = (SmtState *)arg;
     Frame *pFrameYUV;
-    av_log(NULL, AV_LOG_INFO, "smt video display thread start.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt video display thread start.\n");
     
 #if USE_SDL
     SDL_Window *window;   
@@ -454,7 +456,7 @@ static void* smt_video_display_thread(void *arg)
         SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_INPUT_FOCUS);  
     
     if(!window) {    
-        av_log(NULL, AV_LOG_ERROR, "SDL: could not create window - exiting:%s\n",SDL_GetError());    
+        av_log(&smt_class, AV_LOG_ERROR, "SDL: could not create window - exiting:%s\n",SDL_GetError());    
         return NULL;  
     }
 
@@ -482,7 +484,7 @@ static void* smt_video_display_thread(void *arg)
     window = glutCreateWindow("");
 #endif
     if(!smt_gl_setup(&gl_ctx, AV_PIX_FMT_YUV420P)){
-        av_log(NULL, AV_LOG_INFO, "gl render failed.\n");
+        av_log(&smt_class, AV_LOG_INFO, "gl render failed.\n");
         return NULL;
     }
 #endif
@@ -519,7 +521,7 @@ static void* smt_video_display_thread(void *arg)
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
 #endif 
-    av_log(NULL, AV_LOG_INFO, "smt video display thread end.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt video display thread end.\n");
     return NULL;
 }
 
@@ -561,7 +563,7 @@ static void smt_audio_callback_thread(void *arg, uint8_t * stream, int len)
         if(is->swr_ctx){
             int nu = swr_convert(is->swr_ctx, &databuffer, pFramePCM->frame->nb_samples + 256,(const uint8_t **)pFramePCM->frame->data, pFramePCM->frame->nb_samples);
             if(nu <= 0){
-                av_log(NULL, AV_LOG_ERROR, "resample failed. error code: %d\n", nu);
+                av_log(&smt_class, AV_LOG_ERROR, "resample failed. error code: %d\n", nu);
                 av_frame_unref(pFramePCM->frame);
                 frame_queue_next(&is->smt_sampq);
                 continue;
@@ -585,7 +587,7 @@ static void smt_audio_callback_thread(void *arg, uint8_t * stream, int len)
                     av_fifo_grow(is->audio_buffer, extra_data_len - space);
             }
             av_fifo_generic_write(is->audio_buffer, databuffer + len, extra_data_len, NULL);
-            av_log(NULL, AV_LOG_WARNING, "audio has extra data with len = %d\n", extra_data_len);
+            av_log(&smt_class, AV_LOG_WARNING, "audio has extra data with len = %d\n", extra_data_len);
             len = 0;
         }
 
@@ -607,23 +609,23 @@ static void* smt_audio_decode_thread(void *arg)
     Frame *pFramePCM;
     int begin = 0;
     
-    av_log(NULL, AV_LOG_INFO, "smt audio decode thread start.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt audio decode thread start.\n");
     pCodecCtx=is->smt_pFormatCtx->streams[is->smt_audio_stream]->codec; 
     pCodec=avcodec_find_decoder(pCodecCtx->codec_id); 
 
     if(pCodec==NULL){  
-        av_log(NULL, AV_LOG_ERROR, "Codec not found.\n");  
+        av_log(&smt_class, AV_LOG_ERROR, "Codec not found.\n");  
         return NULL;  
     }  
     if(avcodec_open2(pCodecCtx, pCodec,NULL)<0){  
-        av_log(NULL, AV_LOG_ERROR, "Could not open codec.\n");  
+        av_log(&smt_class, AV_LOG_ERROR, "Could not open codec.\n");  
         return NULL;  
     }
 
     wanted_spec.freq = pCodecCtx->sample_rate;
     wanted_spec.channels = pCodecCtx->channels;
     if (wanted_spec.freq <= 0 || wanted_spec.channels <= 0) {
-        av_log(NULL, AV_LOG_ERROR, "Invalid sample rate or channel count!\n");
+        av_log(&smt_class, AV_LOG_ERROR, "Invalid sample rate or channel count!\n");
         return NULL;
     }
 
@@ -634,7 +636,7 @@ static void* smt_audio_decode_thread(void *arg)
     wanted_spec.samples = 4096;
 
     if(SDL_OpenAudio(&wanted_spec, &obtained_spec) < 0){
-        av_log(NULL, AV_LOG_ERROR, "Cannot open audio!\n");
+        av_log(&smt_class, AV_LOG_ERROR, "Cannot open audio!\n");
         return NULL;
     }
 
@@ -652,7 +654,7 @@ static void* smt_audio_decode_thread(void *arg)
         if(is->smt_end)
             break;
         if (packet_queue_get(&is->smt_audioq, &packet, 1, &is->smt_audioq.serial) < 0){
-            av_log(NULL, AV_LOG_ERROR, "get packet error.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "get packet error.\n");  
             return NULL;
         }
         ret = avcodec_decode_audio4(pCodecCtx, pFrame, &got_sample, &packet);
@@ -660,7 +662,7 @@ static void* smt_audio_decode_thread(void *arg)
             frame_queue_push(&is->smt_sampq);
             av_packet_unref(&packet);
             av_frame_unref(pFrame);
-            av_log(NULL, AV_LOG_ERROR, "Audio Decode Error.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "Audio Decode Error.\n");  
             continue;  
         }
         if(got_sample){
@@ -685,7 +687,7 @@ static void* smt_audio_decode_thread(void *arg)
     av_frame_unref(pFrame);
     if(is->swr_ctx)
         swr_free(&is->swr_ctx);
-    av_log(NULL, AV_LOG_INFO, "smt audio decode thread end.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt audio decode thread end.\n");
 #endif
 }
 
@@ -703,7 +705,7 @@ static void* smt_video_decode_thread(void *arg)
     AVRational frame_rate = av_guess_frame_rate(is->smt_pFormatCtx, is->smt_pFormatCtx->streams[is->smt_video_stream], NULL);
 
 
-    av_log(NULL, AV_LOG_INFO, "smt video decode thread start.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt video decode thread start.\n");
     pCodecCtx=is->smt_pFormatCtx->streams[is->smt_video_stream]->codec;  
     pCodec=avcodec_find_decoder(pCodecCtx->codec_id);  
 
@@ -711,11 +713,11 @@ static void* smt_video_decode_thread(void *arg)
     is->smt_height = pCodecCtx->height/4;
     
     if(pCodec==NULL){  
-        av_log(NULL, AV_LOG_ERROR, "Codec not found.\n");  
+        av_log(&smt_class, AV_LOG_ERROR, "Codec not found.\n");  
         return NULL;  
     }  
     if(avcodec_open2(pCodecCtx, pCodec,NULL)<0){  
-        av_log(NULL, AV_LOG_ERROR, "Could not open codec.\n");  
+        av_log(&smt_class, AV_LOG_ERROR, "Could not open codec.\n");  
         return NULL;  
     }  
 
@@ -730,7 +732,7 @@ static void* smt_video_decode_thread(void *arg)
             break;
         }
         if (packet_queue_get(&is->smt_videoq, &packet, 1, &is->smt_videoq.serial) < 0){
-            av_log(NULL, AV_LOG_ERROR, "get packet error.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "get packet error.\n");  
             return NULL;
         }
 
@@ -739,7 +741,7 @@ static void* smt_video_decode_thread(void *arg)
             frame_queue_push(&is->smt_pictq);
             av_packet_unref(&packet);
             av_frame_unref(pFrame);
-            av_log(NULL, AV_LOG_ERROR, "Video Decode Error.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "Video Decode Error.\n");  
             continue;  
         }
 
@@ -766,7 +768,7 @@ static void* smt_video_decode_thread(void *arg)
     avcodec_close(pCodecCtx);
     frame_queue_destory(&is->smt_pictq);
     av_frame_free(&pFrame);
-    av_log(NULL, AV_LOG_INFO, "smt video decode thread end.\n");
+    av_log(&smt_class, AV_LOG_INFO, "smt video decode thread end.\n");
     return NULL;
 }
 
@@ -780,15 +782,15 @@ static void* smt_read_thread(void *arg)
         int y_size;  
         int ret, got_picture;  
         
-        av_log(NULL, AV_LOG_INFO, "smt video read thread start.\n");
+        av_log(&smt_class, AV_LOG_INFO, "smt video read thread start.\n");
         is->smt_pFormatCtx = avformat_alloc_context();  
       
         if(avformat_open_input(&is->smt_pFormatCtx,smt_input_filename,NULL,NULL)!=0){  
-            av_log(NULL, AV_LOG_ERROR, "Couldn't open input stream.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "Couldn't open input stream %s\n", smt_input_filename);  
             return NULL;  
         }  
         if(avformat_find_stream_info(is->smt_pFormatCtx,NULL)<0){  
-            av_log(NULL, AV_LOG_ERROR, "Couldn't find stream information.\n");  
+            av_log(&smt_class, AV_LOG_ERROR, "Couldn't find stream information.\n");  
             return NULL;  
         }  
         is->smt_video_stream = -1;  
@@ -800,10 +802,10 @@ static void* smt_read_thread(void *arg)
                 is->smt_audio_stream = i;
             
         if(is->smt_video_stream == -1)
-            av_log(NULL, AV_LOG_WARNING, "Didn't find a video stream.\n");
+            av_log(&smt_class, AV_LOG_WARNING, "Didn't find a video stream.\n");
 
         if(is->smt_audio_stream == -1)
-            av_log(NULL, AV_LOG_WARNING, "Didn't find a audio stream.\n");
+            av_log(&smt_class, AV_LOG_WARNING, "Didn't find a audio stream.\n");
       
         av_dump_format(is->smt_pFormatCtx,0,smt_input_filename,0);  
          
@@ -835,7 +837,7 @@ static void* smt_read_thread(void *arg)
         av_packet_free(&packet);
         avformat_close_input(&is->smt_pFormatCtx); 
         packet_queue_destroy(&is->smt_videoq);
-        av_log(NULL, AV_LOG_INFO, "smt video read thread end.\n");
+        av_log(&smt_class, AV_LOG_INFO, "smt video read thread end.\n");
         return NULL;  
 
 }
@@ -843,7 +845,7 @@ static void* smt_read_thread(void *arg)
 static void smt_close(SmtState *is)
 {
     is->smt_end = 1;
-    av_log(NULL, AV_LOG_QUIET, "%s", "");
+    av_log(&smt_class, AV_LOG_QUIET, "%s", "");
     pthread_join(is->smt_read_tid, NULL);
     av_fifo_freep(&is->audio_buffer);
     packet_queue_destroy(&is->smt_videoq);
@@ -909,13 +911,14 @@ static int smt_open(int argc, char** argv)
     if (frame_queue_init(&is->smt_pictq, &is->smt_videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0 ||
         frame_queue_init(&is->smt_sampq, &is->smt_audioq, SAMPLE_QUEUE_SIZE, 1) < 0)
         return -1;
-
+    av_log(&smt_class, AV_LOG_INFO, "frame queue was initialized");
     if (packet_queue_init(&is->smt_videoq) < 0 ||
         packet_queue_init(&is->smt_audioq) < 0){
         frame_queue_destory(&is->smt_pictq);
         frame_queue_destory(&is->smt_sampq);
         return -1;
     }
+    av_log(&smt_class, AV_LOG_INFO, "packet queue was initialized");
     packet_queue_flush(&is->smt_videoq);
     packet_queue_flush(&is->smt_audioq);
     packet_queue_put(&is->smt_videoq, &flush_pkt);
@@ -949,7 +952,9 @@ JNIEXPORT jstring JNICALL Java_org_sjtu_nerdtv_smt_player_jni_SmtNativeApi_getSm
 JNIEXPORT void JNICALL Java_org_sjtu_nerdtv_smt_player_jni_SmtNativeApi_play(JNIEnv * env, jobject obj)
 {
     char *program_name = "smtplayer";
-    av_log(NULL, AV_LOG_WARNING, "start up program smt player!!!!");
+    smt_class = av_mallocz(sizeof(AVClass));
+    smt_class->class_name = program_name;
+    av_log(&smt_class, AV_LOG_INFO, "start up program smt player!!!!");
     smt_open(1, &program_name);
 }
 

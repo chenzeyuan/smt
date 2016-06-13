@@ -299,6 +299,7 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
 {
 #if defined(__ANDROID__)
     int android_level;
+    char *title = NULL;
     switch(level){
         case AV_LOG_ERROR:
             android_level = ANDROID_LOG_ERROR;
@@ -312,7 +313,11 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
         default:
             android_level = ANDROID_LOG_INFO;
     }
-    __android_log_print(android_level, ptr, fmt, vl);
+    if(ptr){
+        AVClass *av = *(AVClass **)ptr;
+        title = av->class_name;
+    }
+    __android_log_print(android_level, title, fmt, vl);
 #else
     static int print_prefix = 1;
     static int count;
