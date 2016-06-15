@@ -142,7 +142,6 @@ typedef struct AudioParams {
     enum AVSampleFormat fmt;
     int frame_size;
     int bytes_per_sec;
-    SDL_AudioDeviceID  devID;
 } AudioParams;
 
 typedef struct Clock {
@@ -292,6 +291,7 @@ typedef struct VideoState {
     struct SwsContext *sub_convert_ctx;
     int eof;
 
+    SDL_AudioDeviceID  devID;
     char *filename;
     int idx_screen;
     int width, height, xleft, ytop;
@@ -1140,7 +1140,10 @@ static void stream_component_close(VideoState *is, int stream_index)
     switch (avctx->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
         decoder_abort(&is->auddec, &is->sampq);
-        SDL_CloseAudioDevice(is->audio_tgt.devID);
+        if((!is_second_display && is->idx_screen == 0) ||
+            is_second_display)
+        SDL_CloseAudioDevice(is->devID);
+        //SDL_CloseAudio();
         decoder_destroy(&is->auddec);
         swr_free(&is->swr_ctx);
         av_freep(&is->audio_buf1);
@@ -1245,6 +1248,11 @@ static void do_all_exit(VideoState *is[])
         if (window[i])
             SDL_DestroyWindow(window[i]);
     }
+
+    if(is_second_display) {
+        for(int i = 1 ; i <= 17; i++)
+    SDL_CloseAudioDevice(i);
+     }
     SDL_Quit();
     av_log(NULL, AV_LOG_QUIET, "%s", "");
     exit(0);
@@ -1311,6 +1319,18 @@ static int video_open(VideoState *is)
                 window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
                 is->width  = w *3/8;
                 is->height = h *3/8;
+
+                // to check if need to refresh, so as to show all of them.
+                int show = 1;
+                for(int i = 1 ; i <= nb_input_files; i++) {
+                    if(!window[i]) {
+                        show = 0;
+                        break;
+                     }
+                }
+                if(show){
+                    is->muted = 0;
+                }
             }
         }
         else {
@@ -1743,14 +1763,16 @@ display:
             else if (is->audio_st)
                 av_diff = get_master_clock(is) - get_clock(&is->audclk);
             av_log(NULL, AV_LOG_INFO,
-                   "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB f=%"PRId64"/%"PRId64"   \r",
+                   "No.%1d | %7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB FR =%2d.%d f=%"PRId64"/%"PRId64"   \n",
+                   is->idx_screen,
                    get_master_clock(is),
                    (is->audio_st && is->video_st) ? "A-V" : (is->video_st ? "M-V" : (is->audio_st ? "M-A" : "   ")),
                    av_diff,
                    is->frame_drops_early + is->frame_drops_late,
                    aqsize / 1024,
                    vqsize / 1024,
-                   sqsize,
+                   is->video_st ? is->video_st->r_frame_rate.num : 0,                   
+                   is->video_st ? is->video_st->r_frame_rate.den : 0,
                    is->video_st ? is->video_st->codec->pts_correction_num_faulty_dts : 0,
                    is->video_st ? is->video_st->codec->pts_correction_num_faulty_pts : 0);
             fflush(stdout);
@@ -2435,6 +2457,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
            if (audio_size < 0) {
                 /* if error, just output silence */
                is->audio_buf      = is->silence_buf;
+               if(is->audio_tgt.frame_size != 0)
                is->audio_buf_size = sizeof(is->silence_buf) / is->audio_tgt.frame_size * is->audio_tgt.frame_size;
            } else {
                if (is->show_mode != SHOW_MODE_VIDEO)
@@ -2467,6 +2490,7 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
 
 static int audio_open(void *opaque, int64_t wanted_channel_layout, int wanted_nb_channels, int wanted_sample_rate, struct AudioParams *audio_hw_params)
 {
+    VideoState *is = opaque;
     SDL_AudioSpec wanted_spec, spec;
     const char *env;
     static const int next_nb_channels[] = {0, 0, 1, 6, 2, 6, 4, 6};
@@ -2496,7 +2520,7 @@ static int audio_open(void *opaque, int64_t wanted_channel_layout, int wanted_nb
     wanted_spec.samples = FFMAX(SDL_AUDIO_MIN_BUFFER_SIZE, 2 << av_log2(wanted_spec.freq / SDL_AUDIO_MAX_CALLBACKS_PER_SEC));
     wanted_spec.callback = sdl_audio_callback;
     wanted_spec.userdata = opaque;
-    while ((audio_hw_params->devID = SDL_OpenAudioDevice(NULL, 0, &wanted_spec, &spec, SDL_AUDIO_ALLOW_ANY_CHANGE)) == 0) {
+    while ((is->devID = SDL_OpenAudioDevice(NULL, 0, &wanted_spec, &spec, SDL_AUDIO_ALLOW_ANY_CHANGE)) == 0) {
     //while (SDL_OpenAudio(&wanted_spec, &spec) < 0) {
         av_log(NULL, AV_LOG_WARNING, "SDL_OpenAudio (%d channels, %d Hz): %s\n",
                wanted_spec.channels, wanted_spec.freq, SDL_GetError());
@@ -2512,6 +2536,7 @@ static int audio_open(void *opaque, int64_t wanted_channel_layout, int wanted_nb
         }
         wanted_channel_layout = av_get_default_channel_layout(wanted_spec.channels);
     }
+    
     if (spec.format != AUDIO_S16SYS) {
         av_log(NULL, AV_LOG_ERROR,
                "SDL advised audio format %d is not supported!\n", spec.format);
@@ -2638,8 +2663,6 @@ static int stream_component_open(VideoState *is, int stream_index)
         // i'm not quite sure how to open several audio channels at the same time
         // so the picture switch can also take place with the audio switch.
         // leave it here as it is not required now
-        //if(is->idx_screen != 0)
-        //    break;
         if ((ret = audio_open(is, channel_layout, nb_channels, sample_rate, &is->audio_tgt)) < 0)
             goto fail;
         is->audio_hw_buf_size = ret;
@@ -2666,11 +2689,13 @@ static int stream_component_open(VideoState *is, int stream_index)
             goto fail;
 
         if((!is_second_display && is->idx_screen != 0) 
-            || (is_second_display && is->idx_screen != 1))
-            is->muted = 1;
+           || is_second_display)
+        is->muted = 1;
 
-        SDL_PauseAudioDevice(is->audio_tgt.devID, 0); 
+        //else
+        SDL_PauseAudioDevice(is->devID, 0); 
         //SDL_PauseAudio(0); 
+
         break;
     case AVMEDIA_TYPE_VIDEO:
         is->video_stream = stream_index;
@@ -2881,7 +2906,9 @@ static int read_thread(void *arg)
 
     /* open the streams */
     if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
-        stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
+        if((!is_second_display && is->idx_screen == 0) ||
+            is_second_display)
+            stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
     }
 
     ret = -1;
@@ -3230,7 +3257,7 @@ static void refresh_loop_wait_event(VideoState *is[], SDL_Event *event) {
             av_usleep((int64_t)(remaining_time * 1000000.0));
         }
         remaining_time = REFRESH_RATE;
-        for(int i = 0 ; i <= nb_input_files; i++) {                        
+        for(int i = 0 ; i <= nb_input_files; i++) {      
             if(0 != begin_time_value[i]  && media_status[i] != 2) {
                 int64_t time_now = av_gettime();
                 if(time_now > begin_time_value[i] * 1000) {
@@ -3507,27 +3534,31 @@ static void event_loop(VideoState *cur_stream[])
                 if(is_second_display) {
                     if(main_screen == 0) {
                          cur_stream[1]->muted = 1;                
+                         cur_stream[2]->muted = 1;                
                          cur_stream[3]->muted = 0;
                          main_screen = 3;
                          SDL_ShowWindow( window[3]);                
 		                 SDL_RaiseWindow( window[3] );
                     }  
                     else if(main_screen == 1) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[1]->muted = 1;                
+                        cur_stream[2]->muted = 1;                
                          cur_stream[3]->muted = 0;
                          main_screen = 3;
                          SDL_ShowWindow( window[3]);                
 		                 SDL_RaiseWindow( window[3] );
                     }  
                     else if(main_screen == 2) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[2]->muted = 1;                
+                        cur_stream[3]->muted = 1;
                          cur_stream[1]->muted = 0;
                          main_screen = 1;
                          SDL_ShowWindow( window[1]);                
 		                 SDL_RaiseWindow( window[1] );
                     }  
                     else if(main_screen == 3) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[1]->muted = 1;                
+                        cur_stream[3]->muted = 1;
                          cur_stream[2]->muted = 0;
                          main_screen = 2;
                          SDL_ShowWindow( window[2]);                
@@ -3539,28 +3570,32 @@ static void event_loop(VideoState *cur_stream[])
             case SDLK_PAGEDOWN:
                 if(is_second_display) {
                     if(main_screen == 0) {
-                         cur_stream[1]->muted = 1;                
+                        cur_stream[1]->muted = 1;                
+                        cur_stream[3]->muted = 1;
                          cur_stream[2]->muted = 0;
                          main_screen = 2;
                          SDL_ShowWindow( window[2]);                
 		                SDL_RaiseWindow( window[2] );
                     }  
                     else if(main_screen == 1) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[1]->muted = 1;                
+                        cur_stream[3]->muted = 1;
                          cur_stream[2]->muted = 0;
                          main_screen = 2;
                          SDL_ShowWindow( window[2]);                
 		                SDL_RaiseWindow( window[2] );
                     }  
                     else if(main_screen == 2) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[1]->muted = 1;                
+                        cur_stream[2]->muted = 1;
                          cur_stream[3]->muted = 0;
                          main_screen = 3;
                          SDL_ShowWindow( window[3]);                
 		                SDL_RaiseWindow( window[3] );
                     }  
                     else if(main_screen == 3) {
-                         cur_stream[main_screen]->muted = 1;                
+                        cur_stream[2]->muted = 1;                
+                        cur_stream[3]->muted = 1;
                          cur_stream[1]->muted = 0;
                          main_screen = 1;
                          SDL_ShowWindow( window[1]);                
@@ -3615,7 +3650,6 @@ static void event_loop(VideoState *cur_stream[])
                 break;
             }
         case SDL_MOUSEMOTION:
-            break;
             if (cursor_hidden) {
                 SDL_ShowCursor(1);
                 cursor_hidden = 0;
@@ -3628,6 +3662,7 @@ static void event_loop(VideoState *cur_stream[])
                     break;
                 x = event.motion.x;
             }
+            break;
                 if (seek_by_bytes || cur_stream[main_screen]->ic->duration <= 0) {
                     uint64_t size =  avio_size(cur_stream[main_screen]->ic->pb);
                     stream_seek(cur_stream, size*x/cur_stream[main_screen]->width, 0, 1);
@@ -3959,6 +3994,12 @@ int main(int argc, char **argv)
     av_init_packet(&flush_pkt);
     flush_pkt.data = (uint8_t *)&flush_pkt;
 
+    if(is_second_display) {
+        for(int i = 1 ; i <= 17; i++)
+    SDL_CloseAudioDevice(i);
+     }
+    
+
     for(int i = 0; i <= nb_input_files; i++) {
         begin_time_key[i] = (char*)malloc(strlen(input_filename[i])+1);
         strcpy(begin_time_key[i], input_filename[i]);
@@ -3983,8 +4024,10 @@ int main(int argc, char **argv)
         // SDL2 seems to have bug when several windows start in different threads at the same time
         // the behavior is the SDL_Create_Windows return success while window is black or empty
         // so i force to sleep to leave enough time for a SDL window draw
-        //av_usleep((int64_t)(1500000.0));
+        //av_usleep((int64_t)(300000.0));
+        
     }
+
 
     event_loop(is);
 
