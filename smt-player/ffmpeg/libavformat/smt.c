@@ -149,7 +149,25 @@ static void smt_on_get_id(URLContext *h, smt_sig *sig)
 {
 
 }
+static void smt_calc_rate(char *filename, int len) {
+#define MAX_SEND_NUM 2000
+    static int send_counter = -1;
+    static int64_t start_time = 0;
+    static int64_t len_sum = 0;
 
+    len_sum += len;
+    send_counter++;
+    if(0 == send_counter) {
+        start_time = av_gettime();
+    } else if( MAX_SEND_NUM == send_counter) {
+        int64_t end_time = av_gettime();
+        float rate = len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - start_time));
+        av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
+        start_time = 0;
+        send_counter = -1;
+        len_sum = 0;
+    }
+}
 static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 {
     SMTContext *s = h->priv_data;
@@ -170,7 +188,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
         }
-
+        smt_calc_rate(h->filename, len);
         switch(s->smt_fd_size) {
             case 1:   av_usleep(100);  break;
             case 2:   av_usleep(80);  break;
