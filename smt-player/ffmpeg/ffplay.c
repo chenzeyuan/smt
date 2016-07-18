@@ -311,10 +311,18 @@ typedef struct VideoState {
     SDL_cond *continue_read_thread;
 } VideoState;
 
+typedef struct ResourceParam {
+    int screen_width;
+    int screen_heigth;
+    int screen_posx;
+    int screen_posy;
+} ResourceParam;
+
 
 /* options specified by the user */
 static AVInputFormat *file_iformat;
 static const char *input_filename[MAX_SCREEN_FLOWS];
+static ResourceParam input_file_resource[MAX_SCREEN_FLOWS];
 static int nb_input_files = -1;
 static int main_screen = 0;
 static const char *window_title;
@@ -322,6 +330,8 @@ static int default_width  = 3840;
 static int default_height = 2160;
 static int screen_width  = 3840;
 static int screen_height = 2160;
+static int screen_posX  = -1;
+static int screen_posY = -1;
 static int audio_disable;
 static int video_disable;
 static int subtitle_disable;
@@ -1311,14 +1321,36 @@ static int video_open(VideoState *is)
         if(is_second_display) {
             if (main_screen == is->idx_screen) {
                 //flags |= SDL_WINDOW_FULLSCREEN;
-                window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
-                is->width  = w;
-                is->height = h;
+                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == 0)) {
+                    window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+                else if (input_file_resource[is->idx_screen].screen_posx != 0) {
+                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
+                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    is->width  = input_file_resource[is->idx_screen].screen_width;
+                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                }
+                else {
+                    window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+
             }
             else {
-                window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
-                is->width  = w *3/8;
-                is->height = h *3/8;
+                if(input_file_resource[is->idx_screen].screen_posx == 0) {
+                    window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
+                    is->width  = w *3/8;
+                    is->height = h *3/8;
+                }
+                else{
+                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
+                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    is->width  = w *3/8;
+                    is->height = h *3/8;
+                }
 
                 // to check if need to refresh, so as to show all of them.
                 int show = 1;
@@ -1336,9 +1368,23 @@ static int video_open(VideoState *is)
         else {
             if (main_screen == is->idx_screen) {
                 //flags |= SDL_WINDOW_FULLSCREEN;
-                window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
-                is->width  = w;
-                is->height = h;
+                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == 0)) {
+                    window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+                else if (input_file_resource[is->idx_screen].screen_posx != 0) {
+                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
+                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    is->width  = input_file_resource[is->idx_screen].screen_width;
+                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                }
+                else {
+                    window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+
 
                 // to check if need to refresh, so as to show all of them.
                 int show = 1;
@@ -1354,16 +1400,28 @@ static int video_open(VideoState *is)
                     for(int i = 0 ; i <= nb_input_files; i++) {  
                         if (i == main_screen) continue;   
                         int j = (i < main_screen) ? 0 : 1;
-                        SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i - j ) + i * h/16);
+                        
+                        if(input_file_resource[i].screen_posx == 0)
+                            SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i - j ) + i * h/16);
+                        else 
+                            SDL_SetWindowPosition(window[i], input_file_resource[i].screen_posx, input_file_resource[i].screen_posy);
                         SDL_ShowWindow( window[i]);                
                         SDL_RaiseWindow( window[i] );
                     }
                 }
             }
             else {
-                window[is->idx_screen] = SDL_CreateWindow("", w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (is->idx_screen - 1) + is->idx_screen * h/16, w / 4 , h/4,  flags); 
-                is->width  = w/4 ;
-                is->height = h/4 ;
+                if(input_file_resource[is->idx_screen].screen_posx == 0) {
+                    window[is->idx_screen] = SDL_CreateWindow("", w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (is->idx_screen - 1) + is->idx_screen * h/16, w / 4 , h/4,  flags); 
+                    is->width  = w/4 ;
+                    is->height = h/4 ;
+                }
+                else{
+                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
+                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    is->width  = input_file_resource[is->idx_screen].screen_width;
+                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                }
 
                 // to check if need to refresh, so as to show all of them.
                 int show = 1;
@@ -1379,7 +1437,10 @@ static int video_open(VideoState *is)
                     for(int i = 0 ; i <= nb_input_files; i++) {  
                         if (i == main_screen) continue;   
                         int j = (i < main_screen) ? 0 : 1;
-                        SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i-j) + i * h/16);
+                        if(input_file_resource[i].screen_posx == 0)
+                            SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i-j) + i * h/16);
+                        else 
+                            SDL_SetWindowPosition(window[i], input_file_resource[i].screen_posx, input_file_resource[i].screen_posy);
                         SDL_ShowWindow( window[i]);                
                         SDL_RaiseWindow( window[i] );
                     }
@@ -1739,13 +1800,19 @@ display:
     }
     is->force_refresh = 0;
     if (show_status) {
-        static int64_t last_time;
+        static int64_t last_time[MAX_SCREEN_FLOWS];
+        static int last_frame[MAX_SCREEN_FLOWS];
         int64_t cur_time;
         int aqsize, vqsize, sqsize;
         double av_diff;
+        int64_t time_diff;
+        double  sample_rate;
 
         cur_time = av_gettime_relative();
-        if (!last_time || (cur_time - last_time) >= 30000) {
+        int frame_number = is->video_st ? is->video_st->codec->frame_number : 0 ;
+        if (!last_frame[is->idx_screen] || 
+            ((cur_time - last_time[is->idx_screen]) >= 30000  &&
+             (frame_number - last_frame[is->idx_screen] > 5 ))){
             aqsize = 0;
             vqsize = 0;
             sqsize = 0;
@@ -1762,21 +1829,24 @@ display:
                 av_diff = get_master_clock(is) - get_clock(&is->vidclk);
             else if (is->audio_st)
                 av_diff = get_master_clock(is) - get_clock(&is->audclk);
+            time_diff = cur_time - last_time[is->idx_screen];
+            sample_rate =  1000000 / (double)time_diff * (frame_number - last_frame[is->idx_screen]);
             av_log(NULL, AV_LOG_INFO,
-                   "No.%1d | %7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB FR =%2d.%d f=%"PRId64"/%"PRId64"   \n",
+                   "No.%1d | %7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB VFrame[%d] = %2.3f f=%"PRId64"/%"PRId64"\r",
                    is->idx_screen,
                    get_master_clock(is),
                    (is->audio_st && is->video_st) ? "A-V" : (is->video_st ? "M-V" : (is->audio_st ? "M-A" : "   ")),
                    av_diff,
                    is->frame_drops_early + is->frame_drops_late,
                    aqsize / 1024,
-                   vqsize / 1024,
-                   is->video_st ? is->video_st->r_frame_rate.num : 0,                   
-                   is->video_st ? is->video_st->r_frame_rate.den : 0,
+                   vqsize / 1024,                   
+                   frame_number,
+                   last_frame[is->idx_screen] ? sample_rate: 0 ,                   
                    is->video_st ? is->video_st->codec->pts_correction_num_faulty_dts : 0,
                    is->video_st ? is->video_st->codec->pts_correction_num_faulty_pts : 0);
             fflush(stdout);
-            last_time = cur_time;
+            last_time[is->idx_screen] = cur_time;
+            last_frame[is->idx_screen] = frame_number;
         }
     }
 }
@@ -2906,8 +2976,6 @@ static int read_thread(void *arg)
 
     /* open the streams */
     if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
-        if((!is_second_display && is->idx_screen == 0) ||
-            is_second_display)
             stream_component_open(is, st_index[AVMEDIA_TYPE_AUDIO]);
     }
 
@@ -3729,6 +3797,19 @@ static int opt_height(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_posX(void *optctx, const char *opt, const char *arg)
+{
+    screen_posX = parse_number_or_die(opt, arg, OPT_INT64, 0, INT_MAX);
+    return 0;
+}
+
+static int opt_posY(void *optctx, const char *opt, const char *arg)
+{
+    screen_posY = parse_number_or_die(opt, arg, OPT_INT64, 0, INT_MAX);
+    return 0;
+}
+
+
 static int opt_format(void *optctx, const char *opt, const char *arg)
 {
     file_iformat = av_find_input_format(arg);
@@ -3783,6 +3864,7 @@ static int opt_show_mode(void *optctx, const char *opt, const char *arg)
 
 static void opt_input_file(void *optctx, const char *filename)
 {
+    char * pch;
     if (!filename) {
         av_log(NULL, AV_LOG_FATAL,
                "Argument '%s' provided as input filename, but '%s' was already specified.\n",
@@ -3791,8 +3873,32 @@ static void opt_input_file(void *optctx, const char *filename)
     }
     if (!strcmp(filename, "-"))
         filename = "pipe:";
-    
+  
     nb_input_files++;
+    
+    // using ',' as the delimiter
+     pch = strtok (filename, ",");
+
+    if(pch != NULL) {
+        int i = 0;
+        while (pch != NULL)
+        {
+            char *tail;
+            double d;
+            if(i == 0) { pch = strtok (NULL, ","); i++; continue;}
+
+            d = av_strtod(pch, &tail);
+            if (*tail) exit_program(1);
+            switch(i) {
+                case 1:   input_file_resource[nb_input_files].screen_posx = d;  break;
+                case 2:   input_file_resource[nb_input_files].screen_posy= d;  break;
+                case 3:   input_file_resource[nb_input_files].screen_width= d;  break;
+                case 4:   input_file_resource[nb_input_files].screen_heigth= d;  break;
+            }
+            pch = strtok (NULL, ",");
+            i++;
+        }
+    }
     input_filename[nb_input_files] = filename;
 }
 
@@ -3824,6 +3930,8 @@ static const OptionDef options[] = {
 #include "cmdutils_common_opts.h"
     { "x", HAS_ARG, { .func_arg = opt_width }, "force displayed width", "width" },
     { "y", HAS_ARG, { .func_arg = opt_height }, "force displayed height", "height" },
+    { "posx", HAS_ARG, { .func_arg = opt_posX }, "force displayed the position of X axis", "postion X" },
+    { "posy", HAS_ARG, { .func_arg = opt_posY }, "force displayed the position of Y axis", "position Y" },
     { "s", HAS_ARG | OPT_VIDEO, { .func_arg = opt_frame_size }, "set frame size (WxH or abbreviation)", "size" },
     { "fs", OPT_BOOL, { &is_full_screen }, "force full screen" },
     { "an", OPT_BOOL, { &audio_disable }, "disable audio" },
@@ -3993,12 +4101,6 @@ int main(int argc, char **argv)
 
     av_init_packet(&flush_pkt);
     flush_pkt.data = (uint8_t *)&flush_pkt;
-
-    if(is_second_display) {
-        for(int i = 1 ; i <= 17; i++)
-    SDL_CloseAudioDevice(i);
-     }
-    
 
     for(int i = 0; i <= nb_input_files; i++) {
         begin_time_key[i] = (char*)malloc(strlen(input_filename[i])+1);
