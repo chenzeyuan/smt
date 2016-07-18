@@ -2247,4 +2247,9 @@ int show_sinks(void *optctx, const char *opt, const char *arg)
     return ret;
 }
 
+int opt_avlogext(void *optctx, const char *opt, const char *arg)
+{
+    set_av_log_ext(arg);
+    return 0;
+}
 #endif

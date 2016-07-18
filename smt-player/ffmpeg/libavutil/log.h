@@ -352,6 +352,12 @@ void av_log_format_line(void *ptr, int level, const char *fmt, va_list vl,
 void av_log_set_flags(int arg);
 int av_log_get_flags(void);
 
+#define AV_LOG_EXTENSION
+#ifdef  AV_LOG_EXTENSION
+void av_log_ext(void* avcl, int level, const char *fmt, ...);
+void set_av_log_ext(char* dest);
+#endif
+
 /**
  * @}
  */

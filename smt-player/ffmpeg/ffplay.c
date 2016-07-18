@@ -199,6 +199,19 @@ typedef struct Decoder {
     SDL_Thread *decoder_tid;
 } Decoder;
 
+typedef struct SDL_SpeedSampler
+{
+    Uint64  samples[25];
+
+    int     capacity;
+    int     count;
+    int     first_index;
+    int     next_index;
+
+    Uint64  last_log_time;
+} SDL_SpeedSampler;
+
+
 typedef struct VideoState {
     SDL_Thread *read_tid;
     AVInputFormat *iformat;
@@ -307,9 +320,11 @@ typedef struct VideoState {
 #endif
 
     int last_video_stream, last_audio_stream, last_subtitle_stream;
+    SDL_SpeedSampler vfps_sampler;
 
     SDL_cond *continue_read_thread;
 } VideoState;
+
 
 typedef struct ResourceParam {
     int screen_width;
@@ -317,6 +332,7 @@ typedef struct ResourceParam {
     int screen_posx;
     int screen_posy;
 } ResourceParam;
+
 
 
 /* options specified by the user */
@@ -379,6 +395,43 @@ static int is_smt_sync = 0;
 
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
+
+
+static void SDL_SpeedSamplerReset(SDL_SpeedSampler *sampler)
+{
+    memset(sampler, 0, sizeof(SDL_SpeedSampler));
+    sampler->capacity = sizeof(sampler->samples) / sizeof(Uint64);
+}
+
+static float SDL_SpeedSamplerAdd(SDL_SpeedSampler *sampler, int enable_log, const char *log_tag)
+{
+    Uint64 current = av_gettime();
+    sampler->samples[sampler->next_index] = current;
+    sampler->next_index++;
+    sampler->next_index %= sampler->capacity;
+    if (sampler->count + 1 >= sampler->capacity) {
+        sampler->first_index++;
+        sampler->first_index %= sampler->capacity;
+    } else {
+        sampler->count++;
+    }
+
+    if (sampler->count < 2)
+        return 0;
+
+    float samples_per_second = 1000.0f * 1000 * (sampler->count - 1) / (current - sampler->samples[sampler->first_index]);
+
+    if (enable_log && (sampler->last_log_time + 1000 < current || sampler->last_log_time > current)) {
+        sampler->last_log_time = current;
+        //ALOGW("%s: %.2f\n", log_tag ? log_tag : "N/A", samples_per_second);
+        //av_log_ext(NULL, AV_LOG_ERROR, "%s: %.2f\n", log_tag ? log_tag : "N/A", samples_per_second);
+        if(0 == sampler->next_index) {
+            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"vfps\":\"%.2f\"}\n", log_tag, current, samples_per_second);
+        }
+    }
+
+    return samples_per_second;
+}
 
 
 #if CONFIG_AVFILTER
@@ -972,6 +1025,7 @@ static void video_image_display(VideoState *is)
             vp->uploaded = 0;
         }
         SDL_RenderCopy(renderer[is->idx_screen], is->vid_texture, NULL, &rect);
+        SDL_SpeedSamplerAdd(&is->vfps_sampler, 1, is->filename);
         if (sp) {
 #if USE_ONEPASS_SUBTITLE_RENDER
             SDL_RenderCopy(renderer[is->idx_screen], is->sub_texture, NULL, &rect);
@@ -3158,6 +3212,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->iformat = iformat;
     is->ytop    = 0;
     is->xleft   = 0;
+    SDL_SpeedSamplerReset(&is->vfps_sampler);
 
     /* start video display */
     if (frame_queue_init(&is->pictq, &is->videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0)
@@ -4039,6 +4094,7 @@ static int lockmgr(void **mtx, enum AVLockOp op)
    }
    return 1;
 }
+
 
 /* Called from the main */
 int main(int argc, char **argv)

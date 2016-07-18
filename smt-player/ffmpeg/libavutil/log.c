@@ -39,6 +39,10 @@
 #include "common.h"
 #include "internal.h"
 #include "log.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
 
 #if HAVE_PTHREADS
 #include <pthread.h>
@@ -430,6 +434,148 @@ void avpriv_report_missing_feature(void *avc, const char *msg, ...)
     missing_feature_sample(0, avc, msg, argument_list);
     va_end(argument_list);
 }
+/*---------------------------------------------------------------------------------------*/
+#ifdef AV_LOG_EXTENSION
+
+#define QUEUE_SIZE 50
+#define LOG_SIZE 1024
+typedef struct SeqQueue {
+    char  data[QUEUE_SIZE][LOG_SIZE];
+    int   front;
+    int   rear;
+    pthread_mutex_t q_lock;
+    pthread_cond_t cond;
+    int init_flag;
+    int type;   //  1:remote   other:local 
+    char  remote_addr[1024];
+    int   remote_port;
+}Queue;
+
+Queue log_queue;
+
+static Queue *InitQueue(Queue *q) {
+    q->front = 0;
+    q->rear = 0;
+    pthread_mutex_init(&q->q_lock, NULL);      
+    pthread_cond_init(&q->cond, NULL);
+    return q;
+}
+
+static Queue *GetQueue() {
+    return &log_queue;
+}
+
+static int IsFull(Queue *q) {
+    return ((q->rear+1)%QUEUE_SIZE == q->front);
+}
+
+static int IsEmpty(Queue *q) {
+    return (q->front == q->rear);
+}
+
+static void Enqueue(Queue *q, char *d) { 
+    pthread_mutex_lock(&q->q_lock);
+    if(q && d && !IsFull(q)) {
+        int len = 0;
+        len = strlen(d);
+        len = len>LOG_SIZE?LOG_SIZE:len;
+        strncpy(q->data[q->rear], d, len);
+        q->data[q->rear][len+1] = '/0';
+        q->rear = (q->rear+1)%QUEUE_SIZE;
+        pthread_cond_signal(&q->cond);
+    }
+    pthread_mutex_unlock(&q->q_lock);
+}
+
+static char* Dequeue(Queue *q) {
+    pthread_mutex_lock(&q->q_lock);
+    while(IsEmpty(q)) {
+        pthread_cond_wait(&q->cond, &q->q_lock);
+    }
+    char* tmp = q->data[q->front];
+    q->front = (q->front+1)%QUEUE_SIZE;
+    pthread_mutex_unlock(&q->q_lock);
+    return tmp;
+}
+
+static void send_log(Queue *q) {
+    struct sockaddr_in sendto_addr;
+    int PORT = q->remote_port;
+    int smt_fd = -1;
+    int send_socket = 0;
+    int addr_len = sizeof(struct sockaddr_in);
+    memset(&sendto_addr,  0, sizeof(sendto_addr));
+    sendto_addr.sin_family = AF_INET;
+    sendto_addr.sin_port=htons(PORT);
+    sendto_addr.sin_addr.s_addr=inet_addr(q->remote_addr);
+    send_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if(-1 == send_socket ) {
+        av_log(NULL,AV_LOG_ERROR, "socket create fail !!!!!!\n"); 
+    }
+ 
+    while(1) {
+        struct timeval udp_delay;
+        udp_delay.tv_sec = 0;
+        udp_delay.tv_usec = 50; // 50 us
+        select(0, NULL, NULL, NULL, &udp_delay);
+        char* logdata = Dequeue(q);
+        sendto(send_socket, logdata,strlen(logdata)+1, 0,(struct sockaddr *)&sendto_addr, addr_len);
+    }
+}
+
+void init_av_log_ext() {
+    pthread_t send_log_thread;
+    send_log_thread= pthread_create(&send_log_thread, NULL, send_log, GetQueue());
+}
+
+void set_av_log_ext(char* dest) {
+    if(!dest) return;
+    Queue *q = GetQueue();
+    if(0 == strcmp(dest, "local")) {
+        q->type = 0;
+    } else {
+        char *sep = NULL;
+        q->type = 1;
+        sep = strstr(dest, ":");
+        if(NULL == sep) {
+            strcpy(q->remote_addr, dest);
+            q->remote_port = 7878;
+        } else {
+            strncpy(q->remote_addr, dest, sep - dest);
+            q->remote_addr[sep - dest] = '\0';
+            q->remote_port = atoi(sep+1);
+        }
+    }
+    pthread_mutex_lock(&q->q_lock);
+    if(q->init_flag == 0) {
+        init_av_log_ext();
+        q->init_flag = 1;
+    }
+    pthread_mutex_unlock(&q->q_lock);
+}
+
+void av_log_ext(void* avcl, int level, const char *fmt, ...){
+    static int print_prefix = 1;
+    Queue *q = GetQueue();
+    va_list vl;
+    va_start(vl, fmt);
+    //av_log_default_callback(NULL, level, fmt, vl);
+    if(1 == q->type) {
+        pthread_mutex_lock(&q->q_lock);
+        if(q && !IsFull(q)) {
+            char* line = q->data[q->rear];
+            av_log_format_line(NULL, level, fmt, vl, line, LOG_SIZE, &print_prefix);
+            q->rear = (q->rear+1)%QUEUE_SIZE;
+            pthread_cond_signal(&q->cond);
+        } else {
+            av_log(NULL,AV_LOG_ERROR, "ext log queue is full!!\n"); 
+        }
+        pthread_mutex_unlock(&q->q_lock);
+    }
+    va_end(vl);
+}
+
+#endif /*RAV_LOG_EXTENSION*/ 
 
 #ifdef TEST
 // LCOV_EXCL_START

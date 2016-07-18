@@ -31,6 +31,7 @@ static int				sample_index;
 extern smt_callback     smt_callback_entity;
 //for ffmpeg
 int64_t begin_time = 0;
+int64_t diff_time = 0;
 //for ffplay
 char*   begin_time_key[INPUT_URL_NUM_MAX];
 int64_t begin_time_value[INPUT_URL_NUM_MAX ];
@@ -1262,7 +1263,18 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         memset(pld->data, 0, MTU);
 		pkt->packet_counter = snd->pkt_counter;
         pkt->packet_sequence_number = snd->pkt_seq[snd->asset];
-        int64_t now_time =  av_gettime_relative();
+        int64_t now_time =  av_gettime();
+        if(0 != diff_time) {
+            time_t timer = NULL;
+            time(&timer);
+            struct tm today_zero_time = *localtime(&timer);
+            today_zero_time.tm_hour = 0;
+            today_zero_time.tm_min  = 0;
+            today_zero_time.tm_sec  = 0;
+            time_t timep = mktime(&today_zero_time);
+            begin_time = now_time /1000 - timep * 1000 + diff_time; 
+            diff_time = 0;
+        }
         static int64_t first_time = 0;
         if( 0 == first_time ) {
             first_time = now_time;

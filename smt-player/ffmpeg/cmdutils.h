@@ -587,4 +587,5 @@ void *grow_array(void *array, int elem_size, int *size, int new_size);
 
 double get_rotation(AVStream *st);
 
+int opt_avlogext(void *optctx, const char *opt, const char *arg);
 #endif /* CMDUTILS_H */

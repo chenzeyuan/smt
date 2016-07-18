@@ -113,6 +113,7 @@ int stdin_interaction = 1;
 int frame_bits_per_raw_sample = 0;
 float max_error_rate  = 2.0/3;
 extern int64_t begin_time;
+extern int64_t diff_time;
 
 static int intra_only         = 0;
 static int file_overwrite     = 0;
@@ -588,16 +589,24 @@ static int opt_recording_timestamp(void *optctx, const char *opt, const char *ar
 
 static int opt_begintime(void *optctx, const char *opt, const char *arg)
 {
-    int64_t begin_time_with_day;
-    begin_time_with_day = parse_time_or_die(opt, arg, 0) ;
-    int64_t recording_timestamp = begin_time_with_day/ 1E6;
-    struct tm today_zero_time = *localtime((time_t*)&recording_timestamp);
-    today_zero_time.tm_hour = 0;
-    today_zero_time.tm_min  = 0;
-    today_zero_time.tm_sec  = 0;
-    time_t timep = mktime(&today_zero_time);
-    begin_time = begin_time_with_day /1000 - timep * 1000; //remove year, month ,day
-    av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>> begintime is %s , set begin_time=%d\n", __FILE__, __LINE__, arg, begin_time);
+    av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>>  \n", __FILE__, __LINE__);
+    if(!arg) return 0;
+    if('d' == arg[0] || 'D' == arg[0]) {
+        int diff = atoi(arg+1);
+        diff_time = diff; 
+        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>>  set diff_time=%lldms\n", __FILE__, __LINE__, diff_time );
+    } else {
+        int64_t begin_time_with_day;
+        begin_time_with_day = parse_time_or_die(opt, arg, 0) ;
+        int64_t recording_timestamp = begin_time_with_day/ 1E6;
+        struct tm today_zero_time = *localtime((time_t*)&recording_timestamp);
+        today_zero_time.tm_hour = 0;
+        today_zero_time.tm_min  = 0;
+        today_zero_time.tm_sec  = 0;
+        time_t timep = mktime(&today_zero_time);
+        begin_time = begin_time_with_day /1000 - timep * 1000; //remove year, month ,day
+        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>> begintime is %s , set begin_time=%d\n", __FILE__, __LINE__, arg, begin_time);
+    }
     return 0;
 }
 
@@ -3178,7 +3187,7 @@ const OptionDef options[] = {
     { "timestamp",      HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_recording_timestamp },
         "set the recording timestamp ('now' to set the current time)", "time" },
     { "begintime",      HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_begintime },
-        "set the begintime of smt ('now' to set the current time)", "time" },
+        "set the begintime of smt ,example1: 2016-7-15T10:03:51.353 ,  example2:d1200 ( means delay 1200ms)", "time" },
     { "metadata",       HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(metadata) },
         "add metadata", "string=string" },
     { "program",        HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(program) },
