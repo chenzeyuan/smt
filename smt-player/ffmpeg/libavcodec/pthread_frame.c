@@ -402,7 +402,6 @@ int ff_thread_decode_frame(AVCodecContext *avctx,
     if (err) return err;
     err = submit_packet(p, avpkt);
     if (err) return err;
-
     /*
      * If we're still receiving the initial packets, don't return a frame.
      */
@@ -456,7 +455,6 @@ int ff_thread_decode_frame(AVCodecContext *avctx,
     if (fctx->next_decoding >= avctx->thread_count) fctx->next_decoding = 0;
 
     fctx->next_finished = finished;
-
     /*
      * When no frame was found while flushing, but an error occurred in
      * any thread, return it instead of 0.

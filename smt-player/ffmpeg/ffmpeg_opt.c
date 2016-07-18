@@ -124,6 +124,11 @@ static int input_stream_potentially_available = 0;
 static int ignore_unknown_streams = 0;
 static int copy_unknown_streams = 0;
 
+int listening_port     = 0;
+extern int open_output_file(OptionsContext *o, const char *filename);
+extern int configure_complex_filters(void);
+
+
 static void uninit_options(OptionsContext *o)
 {
     const OptionDef *po = options;
@@ -1211,9 +1216,9 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     if (ost->enc) {
         AVIOContext *s = NULL;
         char *buf = NULL, *arg = NULL, *preset = NULL;
-
+        
+        if(o->g != NULL)
         ost->encoder_opts  = filter_codec_opts(o->g->codec_opts, ost->enc->id, oc, st, ost->enc);
-
         MATCH_PER_STREAM_OPT(presets, str, preset, oc, st);
         if (preset && (!(ret = get_preset_file_2(preset, ost->enc->name, &s)))) {
             do  {
@@ -1232,6 +1237,7 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
             } while (!s->eof_reached);
             avio_closep(&s);
         }
+        
         if (ret) {
             av_log(NULL, AV_LOG_FATAL,
                    "Preset %s specified for stream %d:%d, but could not be opened.\n",
@@ -1280,6 +1286,7 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
         bsf       = next;
     }
 
+
     MATCH_PER_STREAM_OPT(codec_tags, str, codec_tag, oc, st);
     if (codec_tag) {
         uint32_t tag = strtol(codec_tag, &next, 0);
@@ -1301,13 +1308,13 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     if (oc->oformat->flags & AVFMT_GLOBALHEADER)
         ost->enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
-    av_dict_copy(&ost->sws_dict, o->g->sws_dict, 0);
+    if(o->g != NULL) av_dict_copy(&ost->sws_dict, o->g->sws_dict, 0);
 
-    av_dict_copy(&ost->swr_opts, o->g->swr_opts, 0);
+    if(o->g != NULL) av_dict_copy(&ost->swr_opts, o->g->swr_opts, 0);
     if (ost->enc && av_get_exact_bits_per_sample(ost->enc->id) == 24)
         av_dict_set(&ost->swr_opts, "output_sample_bits", "24", 0);
 
-    av_dict_copy(&ost->resample_opts, o->g->resample_opts, 0);
+    if(o->g != NULL) av_dict_copy(&ost->resample_opts, o->g->resample_opts, 0);
 
     ost->source_index = source_index;
     if (source_index >= 0) {
@@ -1901,7 +1908,7 @@ static int init_complex_filters(void)
     return 0;
 }
 
-static int configure_complex_filters(void)
+int configure_complex_filters(void)
 {
     int i, ret = 0;
 
@@ -1912,7 +1919,7 @@ static int configure_complex_filters(void)
     return 0;
 }
 
-static int open_output_file(OptionsContext *o, const char *filename)
+int open_output_file(OptionsContext *o, const char *filename)
 {
     AVFormatContext *oc;
     int i, j, err;
@@ -1940,17 +1947,18 @@ static int open_output_file(OptionsContext *o, const char *filename)
     }
 
     GROW_ARRAY(output_files, nb_output_files);
+    
     of = av_mallocz(sizeof(*of));
     if (!of)
         exit_program(1);
     output_files[nb_output_files - 1] = of;
-
+///
     of->ost_index      = nb_output_streams;
     of->recording_time = o->recording_time;
     of->start_time     = o->start_time;
     of->limit_filesize = o->limit_filesize;
     of->shortest       = o->shortest;
-    av_dict_copy(&of->opts, o->g->format_opts, 0);
+    if(o->g != NULL) av_dict_copy(&of->opts, o->g->format_opts, 0);
 
     if (!strcmp(filename, "-"))
         filename = "pipe:";
@@ -1995,7 +2003,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
             exit_program(1);
         }
     }
-
+    
     if (!strcmp(file_oformat->name, "ffm") && !override_ffserver &&
         av_strstart(filename, "http:", NULL)) {
         int j;
@@ -2047,6 +2055,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                     idx = i;
                 }
             }
+            
             if (idx >= 0)
                 new_video_stream(o, oc, idx);
         }
@@ -2106,6 +2115,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
             }
         }
     } else {
+    
         for (i = 0; i < o->nb_stream_maps; i++) {
             StreamMap *map = &o->stream_maps[i];
 
@@ -2177,7 +2187,7 @@ loop_end:
             }
         }
     }
-
+    
     /* handle attached files */
     for (i = 0; i < o->nb_attachments; i++) {
         AVIOContext *pb;
@@ -2232,7 +2242,8 @@ loop_end:
     }
 
     /* check if all codec options have been used */
-    unused_opts = strip_specifiers(o->g->codec_opts);
+    
+    if(o->g != NULL) unused_opts = strip_specifiers(o->g->codec_opts);
     for (i = of->ost_index; i < nb_output_streams; i++) {
         e = NULL;
         while ((e = av_dict_get(output_streams[i]->encoder_opts, "", e,
@@ -3454,6 +3465,10 @@ const OptionDef options[] = {
         "force data codec ('copy' to copy stream)", "codec" },
     { "dn", OPT_BOOL | OPT_VIDEO | OPT_OFFSET | OPT_INPUT | OPT_OUTPUT, { .off = OFFSET(data_disable) },
         "disable data" },
+
+    /* added the port to listen the command from clients */
+    { "port",  OPT_INT | HAS_ARG,                      { &listening_port},
+            "set the listening port of the command server", "number" },
 
     { NULL, },
 };

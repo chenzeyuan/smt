@@ -46,23 +46,24 @@
 #define SMT_NO_AUDIO 0
 #define SMT_NO_VIDEO 0
 
-
+#define SMT_MAX_DELIVERY_NUM    10
 
 typedef struct SMTContext {
     const AVClass *class;
-    int smt_fd;
+    int smt_fd[SMT_MAX_DELIVERY_NUM];
+    int smt_fd_size;
     int buffer_size;
     int pkt_size;
-    int is_multicast;
+    int is_multicast[SMT_MAX_DELIVERY_NUM];
     int is_broadcast;
     int local_port;
     int reuse_socket;
     char *localaddr;
     int is_connected;
     char *sources;
-    struct sockaddr_storage dest_addr;
-    int dest_addr_len;
-    struct sockaddr_storage local_addr_storage;
+    struct sockaddr_storage dest_addr[SMT_MAX_DELIVERY_NUM];
+    int dest_addr_len[SMT_MAX_DELIVERY_NUM];
+    struct sockaddr_storage local_addr_storage[SMT_MAX_DELIVERY_NUM];
 
     int fifo_size;
     AVFifoBuffer *fifo, *head, *cache;
@@ -78,6 +79,14 @@ typedef struct SMTContext {
 } SMTContext;
 
 static unsigned int consumption_length = 0;
+
+
+static SMTContext * smtContext;
+static URLContext * smtH;
+
+int smt_add_delivery_url(const char *uri);
+int smt_del_delivery_url(const char *uri);
+
 
 static void smt_on_get_mpu(URLContext *h, smt_mpu *mpu)
 {
@@ -145,14 +154,33 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 {
     SMTContext *s = h->priv_data;
     int ret;
+    int i;
 
-    if (!s->is_connected) {
-        ret = sendto (s->smt_fd, buf, len, 0,
-                      (struct sockaddr *) &s->dest_addr,
-                      s->dest_addr_len);
-    } else
-        ret = send(s->smt_fd, buf, len, 0);
-    av_usleep(100); //DO NOT SEND PKT TOO FAST
+    av_log(NULL, AV_LOG_INFO, "sending data to %d clients\n", s->smt_fd_size);
+    for(i = 0 ; i < s->smt_fd_size; i++) {
+        if (!s->is_connected) {
+            if(s->smt_fd[i] == NULL) continue;
+
+            struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
+            av_log(NULL, AV_LOG_INFO, "sending data to client %s:d\n", inet_ntoa(dest_addr->sin_addr), dest_addr->sin_port);
+            ret = sendto (s->smt_fd[i], buf, len, 0,
+                          (struct sockaddr *) &s->dest_addr[i],
+                          s->dest_addr_len[i]);
+        } else {
+            if(s->smt_fd[i] == NULL) continue;
+            ret = send(s->smt_fd[i], buf, len, 0);
+        }
+
+        switch(s->smt_fd_size) {
+            case 1:   av_usleep(100);  break;
+            case 2:   av_usleep(80);  break;
+            case 3:   av_usleep(60);  break;
+            case 4:   av_usleep(40);  break;
+            case 5:   av_usleep(20);  break;
+            default:
+                break;
+        }
+    }
     return ret < 0 ? ff_neterrno() : ret;
 
 }
@@ -166,7 +194,7 @@ static void *smt_mpu_generate_task( void *_URLContext)
         unsigned char buf[MTU];
         int len;
         memset(buf, 0, MTU);
-        len = recv(s->smt_fd, buf, MTU, 0);
+        len = recv(s->smt_fd[0], buf, MTU, 0);
         if(len <= 0)
             break;
         if(!s->receive)
@@ -277,17 +305,17 @@ static int smt_set_url(URLContext *h,
 
 
 static int smt_socket_create(URLContext *h, struct sockaddr_storage *addr,
-                             socklen_t *addr_len, const char *localaddr)
+                             socklen_t *addr_len, const char *localaddr, int localport)
 {
     SMTContext *s = h->priv_data;
     int smt_fd = -1;
     struct addrinfo *res0, *res;
     int family = AF_UNSPEC;
 
-    if (((struct sockaddr *) &s->dest_addr)->sa_family)
-        family = ((struct sockaddr *) &s->dest_addr)->sa_family;
+    if (((struct sockaddr *) &s->dest_addr[s->smt_fd_size])->sa_family)
+        family = ((struct sockaddr *) &s->dest_addr[s->smt_fd_size])->sa_family;
     res0 = smt_resolve_host(h, (localaddr && localaddr[0]) ? localaddr : NULL,
-                            s->local_port,
+                            localport,
                             SOCK_DGRAM, family, AI_PASSIVE);
     if (!res0)
         goto fail;
@@ -388,17 +416,24 @@ int ff_smt_set_remote_url(URLContext *h, const char *uri)
     SMTContext *s = h->priv_data;
     char hostname[256], buf[10];
     int port;
-    
-    av_url_split(NULL, 0, NULL, 0, hostname, sizeof(hostname), &port, NULL, 0, uri);
+    char proto[8];
 
+    av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname), &port, NULL, 0, uri);
+
+    /* make sure only smt protocol could be set*/
+    if(strcmp(proto, "smt") != 0) {
+        av_log(h, AV_LOG_WARNING, "[Warning] proto [%s] cannot be set, only smt is supported\n", proto);
+        return -1;
+    }
+    
     /* set the destination address */
-    s->dest_addr_len = smt_set_url(h, &s->dest_addr, hostname, port);
+    s->dest_addr_len[s->smt_fd_size] = smt_set_url(h, &s->dest_addr[s->smt_fd_size], hostname, port);
     if (s->dest_addr_len < 0) {
         return AVERROR(EIO);
     }
-    s->is_multicast = ff_is_multicast_address((struct sockaddr*) &s->dest_addr);
-
-    return 0;
+    s->is_multicast[s->smt_fd_size] = ff_is_multicast_address((struct sockaddr*) &(s->dest_addr[s->smt_fd_size]));
+    
+    return port;
 }
 
 
@@ -413,7 +448,7 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     int stream_index;
 
     s->buffer_size = SMT_MAX_PKT_SIZE;
-
+    s->smt_fd_size = 0;
     h->is_streamed = 1;
     
     /* fill the dest addr */
@@ -428,19 +463,19 @@ static int smt_open(URLContext *h, const char *uri, int flags)
             goto fail;
     }
 
-    if ((s->is_multicast || s->local_port <= 0) && (h->flags & AVIO_FLAG_READ))
+    if ((s->is_multicast[0] || s->local_port <= 0) && (h->flags & AVIO_FLAG_READ))
             s->local_port = port;
 
 
-    smt_fd = smt_socket_create(h, &my_addr, &len, s->localaddr);
+    smt_fd = smt_socket_create(h, &my_addr, &len, s->localaddr, s->local_port);
     if (smt_fd < 0)
         goto fail;
-    s->local_addr_storage=my_addr; //store for future multicast join
+    s->local_addr_storage[0]=my_addr; //store for future multicast join
 
     /* Follow the requested reuse option, unless it's multicast in which
      * case enable reuse unless explicitly disabled.
      */
-    if (s->reuse_socket > 0 || (s->is_multicast && s->reuse_socket < 0)){
+    if (s->reuse_socket > 0 || (s->is_multicast[0] && s->reuse_socket < 0)){
         s->reuse_socket = 1;
         if (setsockopt (smt_fd, SOL_SOCKET, SO_REUSEADDR, &(s->reuse_socket), sizeof(s->reuse_socket)) != 0)
             goto fail;
@@ -450,8 +485,8 @@ static int smt_open(URLContext *h, const char *uri, int flags)
      * receiving UDP packets from other sources aimed at the same UDP
      * port. This fails on windows. This makes sending to the same address
      * using sendto() fail, so only do it if we're opened in read-only mode. */
-    if (s->is_multicast && !(h->flags & AVIO_FLAG_WRITE)) {
-        bind_ret = bind(smt_fd,(struct sockaddr *)&s->dest_addr, len);
+    if (s->is_multicast[0] && !(h->flags & AVIO_FLAG_WRITE)) {
+        bind_ret = bind(smt_fd,(struct sockaddr *)&s->dest_addr[0], len);
     }
 
     /* bind to the local address if not multicast or if the multicast
@@ -467,9 +502,9 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     getsockname(smt_fd, (struct sockaddr *)&my_addr, &len);
     s->local_port = smt_port(&my_addr, len);
 
-    if (s->is_multicast) {
+    if (s->is_multicast[0]) {
         if (h->flags & AVIO_FLAG_READ) {
-            if (smt_join_multicast_group(smt_fd, (struct sockaddr *)&s->dest_addr,(struct sockaddr *)&s->local_addr_storage) < 0)
+            if (smt_join_multicast_group(smt_fd, (struct sockaddr *)&s->dest_addr[0],(struct sockaddr *)&s->local_addr_storage[0]) < 0)
                 goto fail;
         }
     }
@@ -479,7 +514,10 @@ static int smt_open(URLContext *h, const char *uri, int flags)
         log_net_error(h, AV_LOG_WARNING, "setsockopt(SO_RECVBUF)");
     }
 
-    s->smt_fd = smt_fd;
+    s->smt_fd[0] = smt_fd;
+    s->smt_fd_size = 1;
+    smtContext = s;
+    smtH = h;
 
     s->send = NULL;
     s->receive = NULL;
@@ -586,13 +624,16 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
 static int smt_close(URLContext *h)
 {
     int ret;
+    int i;
     SMTContext *s = h->priv_data;
     time_t t = time(NULL);
     struct tm *tp = localtime(&t);
     av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
-    if (s->is_multicast) 
-        smt_leave_multicast_group(s->smt_fd, (struct sockaddr *)&s->dest_addr,(struct sockaddr *)&s->local_addr_storage);
-    closesocket(s->smt_fd);
+    for(i = 0; i < s->smt_fd_size; i++) {
+        if (s->is_multicast[i]) 
+            smt_leave_multicast_group(s->smt_fd[i], (struct sockaddr *)&s->dest_addr[i],(struct sockaddr *)&s->local_addr_storage[i]);
+        closesocket(s->smt_fd[i]);
+    }
 
     s->generate_thread_run = 0;
 #ifndef SMT_ANDROID
@@ -629,7 +670,7 @@ static int smt_seek(URLContext *h, int64_t pos, int whence)
 static int smt_get_file_handle(URLContext *h)
 {
     SMTContext *s = h->priv_data;
-    return s->smt_fd;
+    return s->smt_fd[0];
 }
 
 
@@ -692,4 +733,68 @@ smt_callback smt_callback_entity = {
     .packet_send        = smt_on_packet_deliver,
 };
 
+
+int smt_add_delivery_url(const char *uri)
+{
+    char hostname[1024];
+    int port = 0, tmp, smt_fd = -1, bind_ret = -1;
+    struct sockaddr_storage my_addr;
+    socklen_t len;
+    char *localaddr;
+
+    if(smtContext->smt_fd_size == SMT_MAX_DELIVERY_NUM)
+        return -1;
+    port = ff_smt_set_remote_url(smtH, uri);
+    if(port <= 0)
+        return port;
+
+    smt_fd = smt_socket_create(smtH, &my_addr, &len, localaddr, port);
+    if (smt_fd < 0)
+        return -1;
+    smtContext->local_addr_storage[smtContext->smt_fd_size]=my_addr; //store for future multicast join
+
+    if (smtContext->is_multicast[smtContext->smt_fd_size]) {
+        if (smt_join_multicast_group(smt_fd, (struct sockaddr *)&smtContext->dest_addr[smtContext->smt_fd_size],(struct sockaddr *)&smtContext->local_addr_storage[smtContext->smt_fd_size]) < 0)
+                return -1;
+    }
+
+    smtContext->smt_fd[smtContext->smt_fd_size] = smt_fd;
+    smtContext->smt_fd_size++;
+    return 1;
+}
+
+int smt_del_delivery_url(const char *uri)
+{
+    char hostname[1024];
+    int port = 0, tmp, smt_fd = -1, bind_ret = -1;
+    struct sockaddr_storage my_addr;
+    socklen_t len;
+    char *localaddr;
+    int i, j;
+    
+    if(smtContext->smt_fd_size == 1)
+        return -1;
+
+    for(i = 1; i < smtContext->smt_fd_size; i++)
+    {    
+        struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
+        av_log(NULL, AV_LOG_INFO, "try to del %s with %s \n", uri, inet_ntoa(dest_addr->sin_addr));
+        if(!strstr(uri, inet_ntoa(dest_addr->sin_addr)))
+            continue;
+        
+        av_log(NULL, AV_LOG_INFO, "found try to del %s \n", inet_ntoa(dest_addr->sin_addr));
+        if (smtContext->is_multicast[i]) 
+            smt_leave_multicast_group(smtContext->smt_fd[i], (struct sockaddr *)&smtContext->dest_addr[i],(struct sockaddr *)&smtContext->local_addr_storage[i]);
+        closesocket(smtContext->smt_fd[i]);
+        for(j = i+1; j < smtContext->smt_fd_size; j++) {
+            smtContext->smt_fd[j-1] = smtContext->smt_fd[j];
+            smtContext->dest_addr[j-1] = smtContext->dest_addr[j];
+            smtContext->dest_addr_len[j-1] = smtContext->dest_addr_len[j];
+            smtContext->local_addr_storage[j-1] = smtContext->local_addr_storage[j];
+         }
+        smtContext->smt_fd_size--;
+        return 1;
+    }
+    return 1;
+}
 

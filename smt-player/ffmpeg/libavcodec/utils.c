@@ -2106,9 +2106,9 @@ int attribute_align_arg avcodec_decode_video2(AVCodecContext *avctx, AVFrame *pi
             if (avctx->err_recognition & AV_EF_EXPLODE)
                 goto fail;
         }
-
         avctx->internal->pkt = &tmp;
-        if (HAVE_THREADS && avctx->active_thread_type & FF_THREAD_FRAME)
+        
+        if (HAVE_THREADS && avctx->active_thread_type & FF_THREAD_FRAME) 
             ret = ff_thread_decode_frame(avctx, picture, got_picture_ptr,
                                          &tmp);
         else {
@@ -2120,6 +2120,7 @@ int attribute_align_arg avcodec_decode_video2(AVCodecContext *avctx, AVFrame *pi
             if(!avctx->has_b_frames){
                 av_frame_set_pkt_pos(picture, avpkt->pos);
             }
+            
             //FIXME these should be under if(!avctx->has_b_frames)
             /* get_buffer is supposed to set frame parameters */
             if (!(avctx->codec->capabilities & AV_CODEC_CAP_DR1)) {
@@ -2129,7 +2130,6 @@ int attribute_align_arg avcodec_decode_video2(AVCodecContext *avctx, AVFrame *pi
                 if (picture->format == AV_PIX_FMT_NONE)   picture->format              = avctx->pix_fmt;
             }
         }
-
 fail:
         emms_c(); //needed to avoid an emms_c() call before every return;
 

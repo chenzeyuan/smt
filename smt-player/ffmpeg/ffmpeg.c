@@ -31,6 +31,13 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <stdio.h>
+
 
 #if HAVE_IO_H
 #include <io.h>
@@ -157,6 +164,214 @@ static int restore_tty;
 #if HAVE_PTHREADS
 static void free_input_threads(void);
 #endif
+
+static pthread_t listening_tid;
+static int server_socket_fd ;
+extern int listening_port;  
+
+struct sockaddr_in client_addr; 
+
+extern int open_output_file(OptionsContext *o, const char *filename);
+extern int configure_complex_filters(void);
+static int transcode_init(void);
+extern int smt_add_delivery_url(const char *uri);
+extern int smt_del_delivery_url(const char *uri);
+
+
+static void close_output_stream(OutputStream *ost)
+{
+    OutputFile *of = output_files[ost->file_index];
+
+    ost->finished |= ENCODER_FINISHED;
+    if (of->shortest) {
+        int64_t end = av_rescale_q(ost->sync_opts - ost->first_pts, ost->enc_ctx->time_base, AV_TIME_BASE_Q);
+        of->recording_time = FFMIN(of->recording_time, end);
+    }
+}
+
+static int handle_command(char * command)
+{
+    char * pch;
+    char * added_address; 
+    pch = strtok (command, " ,-");
+
+    if(strcmp (pch, "del") == 0) {  
+        
+        int i;
+        pch = strtok (NULL, " ,-");
+
+        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELed\n", pch?pch:inet_ntoa(client_addr.sin_addr));
+
+        #if 0
+        for (i = 0; i < nb_output_streams; i++) {
+            OutputStream *ost    = output_streams[i];
+            OutputFile *of       = output_files[ost->file_index];
+            AVFormatContext *os  = output_files[ost->file_index]->ctx;
+        
+            printf("file name %s\n", os->filename);
+            if (strstr(os->filename, pch?pch:inet_ntoa(client_addr.sin_addr)) == NULL)
+                continue;
+            else {
+                int j;
+                int tmp_file_index;
+                printf("found");
+
+                // first to clost the stream.
+                for (j = 0; j < of->ctx->nb_streams; j++) 
+                    close_output_stream(output_streams[of->ost_index + j]);
+
+                // Warning! to keep the stable the streams and files array, that is output_streams and output_files
+                // we have to remove it from the array, which would lead to re-arrangement of the array (shift).
+                // although without enough testing, it is expected to cause the problem of the whole stream flows.
+                //
+                // the idealy solution is to adjust the arrays dynamically.
+                // unfortunately, we cannot do that, because all the ffmpeg regard the arrays as the continous array.
+                // so the shift is next to be done. 
+                // full test need to done after several ADD and DEL operations.
+                // TODO: liminghao   test the maintance of the array
+                tmp_file_index = ost->file_index;
+                nb_output_streams -= of->ctx->nb_streams;
+                // second to shift the stream array
+                for (j = i; j < nb_output_streams; j++) {
+                    output_streams[j] = output_streams[j + of->ctx->nb_streams];
+                    output_streams[j]->file_index--;
+                }
+
+                // last to shift the file array
+                nb_output_files--;
+                for (j = tmp_file_index; j < nb_output_files; j++) {
+                    output_files[j] = output_files[j + 1];
+                    output_files[j]->ost_index -= of->ctx->nb_streams;
+                }
+
+                 /* configure the complex filtergraphs */
+                configure_complex_filters();
+                //transcode_init();
+                
+                return 1;
+                
+            }
+        }        
+        #endif
+        
+        smt_del_delivery_url(pch?pch:inet_ntoa(client_addr.sin_addr)); 
+    }
+    else if(strcmp (pch, "add") == 0) {  
+        int i;
+        OptionsContext o;
+        pch = strtok (NULL, " ,-");
+        added_address = pch;
+        if(added_address != NULL) { 
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be ADDed\n", added_address);
+            printf("add");    
+
+            #if 0
+            for (i = 0; i < nb_output_streams; i++) {
+                OutputStream *ost    = output_streams[i];
+                OutputFile *of       = output_files[ost->file_index];
+                AVFormatContext *os  = output_files[ost->file_index]->ctx;
+            
+                printf("file name %s\n", os->filename);
+                if (strstr(os->filename, added_address) == NULL)
+                    continue;
+                else {
+                        av_log(NULL, AV_LOG_WARNING, "[Result] address %s has already been ADDed. Ignore.\n", added_address);
+                        return -1;
+                }
+            }
+
+            memset(&o, 0, sizeof(o));
+            
+            o.stop_time = INT64_MAX;
+            o.mux_max_delay  = 0.7;
+            o.start_time     = AV_NOPTS_VALUE;
+            o.start_time_eof = AV_NOPTS_VALUE;
+            o.recording_time = INT64_MAX;
+            o.limit_filesize = UINT64_MAX;
+            o.chapters_input_file = INT_MAX;
+            o.accurate_seek  = 1;
+            o.format = "mpegts";
+
+            open_output_file(&o, added_address);
+            /* configure the complex filtergraphs */
+            configure_complex_filters();
+            transcode_init();
+            #endif
+            printf("add");    
+
+            smt_add_delivery_url(added_address);
+        }
+        else {
+            return -1;
+        }
+            
+    }
+    else {        
+      av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
+      return -1;
+    }
+      
+    return 1;
+}
+
+
+static void *listening_read_thread(void *arg)
+{
+    while(1) 
+    {  
+         socklen_t client_addr_length = sizeof(client_addr); 
+         
+         char command[1024]; 
+         memset(command, 0, 1024); 
+         if(recvfrom(server_socket_fd, command, 1024,0,(struct sockaddr*)&client_addr, &client_addr_length) == -1) 
+         { 
+            return;
+         } 
+
+         /* Remove trailing newline, if there. */
+         if ((strlen(command)>0) && (command[strlen(command) - 1] == '\n')) {
+             command[strlen(command) - 1] = '\0';
+         } 
+
+         if(strlen(command) == 0)
+            continue;
+
+         av_log(NULL, AV_LOG_INFO, "[command] receive: [%s] from address %s\n", command, inet_ntoa(client_addr.sin_addr));
+
+         handle_command(command);
+
+    }
+    return;
+
+}
+
+
+static int listening_server_open(const int port)
+{
+    struct sockaddr_in server_addr; 
+    int ret = -1;
+    memset(&server_addr, 0, sizeof(server_addr)); 
+    server_addr.sin_family = AF_INET; 
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    server_addr.sin_port = htons(port); 
+    
+    server_socket_fd = socket(AF_INET, SOCK_DGRAM, 0); 
+    if(server_socket_fd == -1) 
+    { 
+       return ret;
+    } 
+    if(-1 == (bind(server_socket_fd,(struct sockaddr*)&server_addr,sizeof(server_addr)))) 
+    { 
+       return ret;
+    } 
+
+    av_log(NULL, AV_LOG_INFO, "[command] succeed in binding the listening port [%d]\n", port);
+    ret = pthread_create(&listening_tid, NULL, listening_read_thread, NULL);
+
+    return ret;
+}
+
+
 
 /* sub2video hack:
    Convert subtitles to video with alpha to insert them in filter graphs.
@@ -754,17 +969,6 @@ static void write_frame(AVFormatContext *s, AVPacket *pkt, OutputStream *ost)
         close_all_output_streams(ost, MUXER_FINISHED | ENCODER_FINISHED, ENCODER_FINISHED);
     }
     av_packet_unref(pkt);
-}
-
-static void close_output_stream(OutputStream *ost)
-{
-    OutputFile *of = output_files[ost->file_index];
-
-    ost->finished |= ENCODER_FINISHED;
-    if (of->shortest) {
-        int64_t end = av_rescale_q(ost->sync_opts - ost->first_pts, ost->enc_ctx->time_base, AV_TIME_BASE_Q);
-        of->recording_time = FFMIN(of->recording_time, end);
-    }
 }
 
 static int check_recording_time(OutputStream *ost)
@@ -1961,7 +2165,6 @@ static int decode_audio(InputStream *ist, AVPacket *pkt, int *got_output)
 
     ist->samples_decoded += decoded_frame->nb_samples;
     ist->frames_decoded++;
-
 #if 1
     /* increment next_dts to use for the case where the input stream does not
        have timestamps or there are multiple frames in the packet */
@@ -2072,6 +2275,7 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
     pkt->dts  = av_rescale_q(ist->dts, AV_TIME_BASE_Q, ist->st->time_base);
 
     update_benchmark(NULL);
+    
     ret = avcodec_decode_video2(ist->dec_ctx,
                                 decoded_frame, got_output, pkt);
     update_benchmark("decode_video %d.%d", ist->file_index, ist->st->index);
@@ -2270,6 +2474,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt, int no_eo
     int got_output = 0;
 
     AVPacket avpkt;
+    
     if (!ist->saw_first_ts) {
         ist->dts = ist->st->avg_frame_rate.num ? - ist->dec_ctx->has_b_frames * AV_TIME_BASE / av_q2d(ist->st->avg_frame_rate) : 0;
         ist->pts = 0;
@@ -2315,6 +2520,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt, int no_eo
                    "Multiple frames in a packet from stream %d\n", pkt->stream_index);
             ist->showed_multi_packet_warning = 1;
         }
+
 
         switch (ist->dec_ctx->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
@@ -2371,6 +2577,7 @@ static int process_input_packet(InputStream *ist, const AVPacket *pkt, int no_eo
         if (got_output && !pkt)
             break;
     }
+
 
     /* after flushing, send an EOF on all the filter inputs attached to the stream */
     /* except when looping we need to flush but not to send an EOF */
@@ -3358,7 +3565,6 @@ static int need_output(void)
         OutputStream *ost    = output_streams[i];
         OutputFile *of       = output_files[ost->file_index];
         AVFormatContext *os  = output_files[ost->file_index]->ctx;
-
         if (ost->finished ||
             (os->pb && avio_tell(os->pb) >= of->limit_filesize))
             continue;
@@ -3368,7 +3574,6 @@ static int need_output(void)
                 close_output_stream(output_streams[of->ost_index + j]);
             continue;
         }
-
         return 1;
     }
 
@@ -3800,7 +4005,6 @@ static int process_input(int file_index)
         ifile->eof_reached = 1;
         return AVERROR(EAGAIN);
     }
-
     reset_eagain();
 
     if (do_pkt_dump) {
@@ -3826,7 +4030,6 @@ static int process_input(int file_index)
         av_log(NULL, AV_LOG_FATAL, "%s: corrupt input packet in stream %d\n", is->filename, pkt.stream_index);
         exit_program(1);
     }
-
     if (debug_ts) {
         av_log(NULL, AV_LOG_INFO, "demuxer -> ist_index:%d type:%s "
                "next_dts:%s next_dts_time:%s next_pts:%s next_pts_time:%s pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s off:%s off_time:%s\n",
@@ -3922,7 +4125,6 @@ static int process_input(int file_index)
                 pkt.pts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
         }
     }
-
     duration = av_rescale_q(ifile->duration, ifile->time_base, ist->st->time_base);
     if (pkt.pts != AV_NOPTS_VALUE) {
         pkt.pts += duration;
@@ -3982,9 +4184,8 @@ static int process_input(int file_index)
     }
 
     sub2video_heartbeat(ist, pkt.pts);
-
     process_input_packet(ist, &pkt, 0);
-
+    
 discard_packet:
     av_packet_unref(&pkt);
 
@@ -4126,6 +4327,7 @@ static int transcode(void)
         }
 
         ret = transcode_step();
+        
         if (ret < 0) {
             if (ret == AVERROR_EOF || ret == AVERROR(EAGAIN)) {
                 continue;
@@ -4309,17 +4511,19 @@ int main(int argc, char **argv)
     }
 
     /* file converter / grab */
-    if (nb_output_files <= 0) {
-        av_log(NULL, AV_LOG_FATAL, "At least one output file must be specified\n");
-        exit_program(1);
+    //if (nb_output_files <= 0) {
+    //    av_log(NULL, AV_LOG_FATAL, "At least one output file must be specified\n");
+    //    exit_program(1);
+    //}
+
+    if(listening_port) {
+        if(-1 == listening_server_open(listening_port))
+            av_log(NULL, AV_LOG_WARNING, "listening server cannot start on port %d .\n", listening_port);
+            
     }
-
-//     if (nb_input_files == 0) {
-//         av_log(NULL, AV_LOG_FATAL, "At least one input file must be specified\n");
-//         exit_program(1);
-//     }
-
+        
     current_time = ti = getutime();
+
     if (transcode() < 0)
         exit_program(1);
     ti = getutime() - ti;
