@@ -34,7 +34,9 @@ int64_t begin_time = 0;
 int64_t diff_time = 0;
 //for ffplay
 char*   begin_time_key[INPUT_URL_NUM_MAX];
-int64_t begin_time_value[INPUT_URL_NUM_MAX ];
+int64_t begin_time_value[INPUT_URL_NUM_MAX];
+unsigned int last_packet_counter[INPUT_URL_NUM_MAX];
+
 
 static int get_index_of_input_url(char* key) {
     if(NULL == key) return -1;
@@ -421,6 +423,21 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
+
+                    int index = get_index_of_input_url(h->filename);
+                    if(-1 != index ) {
+                        if(last_packet_counter[index] + 1 == p->packet_counter ) {
+                        } else {
+                            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%d\"}\n", 
+                                                            h->filename,
+                                                            p->packet_counter - last_packet_counter[index] -1,
+                                                            p->packet_counter );
+
+                        }
+                        last_packet_counter[index] = p->packet_counter;
+                    }
+
+                    
                     recv->process_position += 16;
                     recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER_EXTENSION;
                 }
