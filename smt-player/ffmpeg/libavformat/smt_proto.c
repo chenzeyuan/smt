@@ -418,19 +418,6 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
-                    int index = get_index_of_input_url(h->filename);
-                    if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
-                        int64_t now_time_us =  av_gettime();
-                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
-                        struct tm today_zero_time = *localtime(&now_time_s);
-                        today_zero_time.tm_hour = 0;
-                        today_zero_time.tm_min  = 0;
-                        today_zero_time.tm_sec  = 0;
-                        time_t time_zero_s = mktime(&today_zero_time);
-                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
-                        begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
-                    }
-
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
@@ -929,9 +916,16 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
         pld_f = (smt_payload_mpu *)&(recv->mpu_head[asset_id]->payload);
         pld = (smt_payload_mpu *)&(p->payload);
         if(pld_f->MPU_sequence_number < pld->MPU_sequence_number){
+                smt_packet *iterator;
                 smt_mpu *mpu = (smt_mpu *)av_mallocz(sizeof(smt_mpu));
                 mpu->asset = asset_id;
                 mpu->sequnce = pld_f->MPU_sequence_number;
+                iterator = recv->mpu_head[asset_id];//get first smt packet of the mpu
+                unsigned int timestamp_of_first_packet = iterator->timestamp;
+
+                
+                
+
                 ret = smt_assemble_mpu(h, recv, asset_id, mpu);
                 if(ret != SMT_STATUS_OK){
                     av_log(h, AV_LOG_ERROR, "assemble mpu %d failed!\n\n", pld_f->MPU_sequence_number);
@@ -946,6 +940,36 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                     avformat_dump(fn, mpu->sample_data, mpu->sample_length, "a+");
                     av_log(h, AV_LOG_INFO, "%s is generated\n",fn, pld->MPU_sequence_number, asset_id);
 #endif
+
+
+                    { 
+                        int64_t now_time_us =  av_gettime();
+                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
+                        struct tm today_zero_time = *localtime(&now_time_s);
+                        today_zero_time.tm_hour = 0;
+                        today_zero_time.tm_min  = 0;
+                        today_zero_time.tm_sec  = 0;
+                        time_t time_zero_s = mktime(&today_zero_time);
+                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
+                        int index = get_index_of_input_url(h->filename);
+                        int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
+                        int64_t todaytime = now_time_us - time_zero_us;
+                        int64_t delay = now_time_us - timestamp_64;
+                        av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
+                                h->filename, 
+                                now_time_us , 
+                                timestamp_64,
+                                delay,
+                                p->packet_id,
+                                p->packet_sequence_number,
+                                p->packet_counter );
+                        if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
+                            begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
+                        }
+                    }
+
+
+
                     if(smt_callback_entity.mpu_callback_fun)
                         smt_callback_entity.mpu_callback_fun(h,mpu);
                     else
