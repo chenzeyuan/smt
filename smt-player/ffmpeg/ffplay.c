@@ -46,6 +46,11 @@
 #include "libavutil/opt.h"
 #include "libavcodec/avfft.h"
 #include "libswresample/swresample.h"
+//added for socket listening
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
 
 #if CONFIG_AVFILTER
 # include "libavfilter/avfilter.h"
@@ -94,9 +99,14 @@ int media_status[MAX_SCREEN_FLOWS];//0:   1:initialed 2:started
 #define SAMPLE_CORRECTION_PERCENT_MAX 10
 
 /* external clock speed adjustment constants for realtime sources based on buffer fullness */
-#define EXTERNAL_CLOCK_SPEED_MIN  0.900
-#define EXTERNAL_CLOCK_SPEED_MAX  1.010
-#define EXTERNAL_CLOCK_SPEED_STEP 0.001
+//#define EXTERNAL_CLOCK_SPEED_MIN  0.900
+//#define EXTERNAL_CLOCK_SPEED_MAX  1.010
+//#define EXTERNAL_CLOCK_SPEED_STEP 0.001
+// TODO: adjusted by minghaol. these parameter are updated for the sound effect for external clock
+#define EXTERNAL_CLOCK_SPEED_MIN  0.9995
+#define EXTERNAL_CLOCK_SPEED_MAX  1.0005
+#define EXTERNAL_CLOCK_SPEED_STEP 0.0001
+
 
 /* we use about AUDIO_DIFF_AVG_NB A-V differences to make the average */
 #define AUDIO_DIFF_AVG_NB   20
@@ -325,14 +335,12 @@ typedef struct VideoState {
     SDL_cond *continue_read_thread;
 } VideoState;
 
-
 typedef struct ResourceParam {
     int screen_width;
     int screen_heigth;
     int screen_posx;
     int screen_posy;
 } ResourceParam;
-
 
 
 /* options specified by the user */
@@ -390,6 +398,16 @@ static AVPacket flush_pkt;
 
 static int is_second_display = 0;
 static int is_smt_sync = 0;
+static int port = 0;
+static pthread_t listening_tid;
+static int socket_fd ;
+static struct sockaddr_in client_addr; 
+static int is_modify = 0;
+static int modify_index = 0;
+static char * modify_server;
+
+static VideoState *global_is[MAX_SCREEN_FLOWS];
+
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
@@ -1204,8 +1222,6 @@ static void stream_component_close(VideoState *is, int stream_index)
     switch (avctx->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
         decoder_abort(&is->auddec, &is->sampq);
-        if((!is_second_display && is->idx_screen == 0) ||
-            is_second_display)
         SDL_CloseAudioDevice(is->devID);
         //SDL_CloseAudio();
         decoder_destroy(&is->auddec);
@@ -1355,6 +1371,58 @@ static void set_default_window_size(int width, int height, AVRational sar)
     default_height = rect.h;
 }
 
+static void switch_full_screen(VideoState *is)
+{
+    SDL_SetWindowPosition(window[is->idx_screen], 0, 0);
+    SDL_SetWindowSize (window[is->idx_screen], default_width , default_height);
+    is->width  = default_width;
+    is->height = default_height;
+    main_screen = is->idx_screen;
+    is->muted = 0;
+}
+
+static void switch_sub_screen(VideoState *is)
+{
+    //if(is->idx_screen != main_screen)  return;
+    //if(is->width != default_width || is->width != screen_width) return;
+    SDL_SetWindowSize (window[is->idx_screen], default_width / 4 , default_height / 4);
+    //SDL_SetWindowPosition(window[is->idx_screen], 0, 0);
+    is->width  = default_width / 4;
+    is->height = default_height / 4;
+}
+
+static void refresh_video() {
+    int w,h;
+
+    if(nb_input_files == -1)  return;
+    if (screen_width) {
+        w = screen_width;
+        h = screen_height;
+    } else {
+        w = default_width;
+        h = default_height;        
+    }
+    if(input_file_resource[main_screen].screen_posx == -1) {
+        switch_full_screen(global_is[main_screen]); 
+    }
+    SDL_ShowWindow( window[main_screen]);                
+    SDL_RaiseWindow( window[main_screen] );
+    for(int i = 0 ; i <= nb_input_files; i++) {  
+        if (i == main_screen) {
+            continue;
+        }
+        int j = (i < main_screen) ? 0 : 1;
+      
+        if(input_file_resource[i].screen_posx == -1) {
+            SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i - j ) + i * h/16);
+            }
+        else 
+            SDL_SetWindowPosition(window[i], input_file_resource[i].screen_posx, input_file_resource[i].screen_posy);
+        SDL_ShowWindow( window[i]);                
+        SDL_RaiseWindow( window[i] );
+    }
+}
+
 static int video_open(VideoState *is)
 {
     int w,h;
@@ -1375,12 +1443,12 @@ static int video_open(VideoState *is)
         if(is_second_display) {
             if (main_screen == is->idx_screen) {
                 //flags |= SDL_WINDOW_FULLSCREEN;
-                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == 0)) {
+                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == -1)) {
                     window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
                     is->width  = w;
                     is->height = h;
                 }
-                else if (input_file_resource[is->idx_screen].screen_posx != 0) {
+                else if (input_file_resource[is->idx_screen].screen_posx != -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
                     input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
@@ -1394,7 +1462,7 @@ static int video_open(VideoState *is)
 
             }
             else {
-                if(input_file_resource[is->idx_screen].screen_posx == 0) {
+                if(input_file_resource[is->idx_screen].screen_posx == -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
                     is->width  = w *3/8;
                     is->height = h *3/8;
@@ -1420,6 +1488,30 @@ static int video_open(VideoState *is)
             }
         }
         else {
+             
+            if(is_modify && is->idx_screen == nb_input_files) {
+                // do not show it right now
+                window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, SDL_WINDOW_HIDDEN);
+                is->width  = w;
+                is->height = h;
+
+                SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+                
+                if (window[is->idx_screen]) {
+                    renderer[is->idx_screen] = SDL_CreateRenderer(window[is->idx_screen], -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+                }
+
+                SDL_Event e;
+                SDL_zero(e);
+    
+                e.type = SDL_USEREVENT + 1;
+                e.user.code = modify_index;    
+                
+                SDL_PushEvent(&e);
+
+                return 0;
+            }
+            
             if (main_screen == is->idx_screen) {
                 //flags |= SDL_WINDOW_FULLSCREEN;
                 if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == 0)) {
@@ -1427,7 +1519,7 @@ static int video_open(VideoState *is)
                     is->width  = w;
                     is->height = h;
                 }
-                else if (input_file_resource[is->idx_screen].screen_posx != 0) {
+                else if (input_file_resource[is->idx_screen].screen_posx != -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
                     input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
@@ -1448,24 +1540,12 @@ static int video_open(VideoState *is)
                         break;
                     }
                 }
-                if(show){
-                    SDL_ShowWindow( window[main_screen]);                
-                    SDL_RaiseWindow( window[main_screen] );
-                    for(int i = 0 ; i <= nb_input_files; i++) {  
-                        if (i == main_screen) continue;   
-                        int j = (i < main_screen) ? 0 : 1;
-                        
-                        if(input_file_resource[i].screen_posx == 0)
-                            SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i - j ) + i * h/16);
-                        else 
-                            SDL_SetWindowPosition(window[i], input_file_resource[i].screen_posx, input_file_resource[i].screen_posy);
-                        SDL_ShowWindow( window[i]);                
-                        SDL_RaiseWindow( window[i] );
-                    }
+                if(show) {
+                    refresh_video();
                 }
             }
             else {
-                if(input_file_resource[is->idx_screen].screen_posx == 0) {
+                if(input_file_resource[is->idx_screen].screen_posx == -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (is->idx_screen - 1) + is->idx_screen * h/16, w / 4 , h/4,  flags); 
                     is->width  = w/4 ;
                     is->height = h/4 ;
@@ -1485,19 +1565,8 @@ static int video_open(VideoState *is)
                         break;
                      }
                 }
-                if(show){
-                    SDL_ShowWindow( window[main_screen]);                
-                    SDL_RaiseWindow( window[main_screen] );
-                    for(int i = 0 ; i <= nb_input_files; i++) {  
-                        if (i == main_screen) continue;   
-                        int j = (i < main_screen) ? 0 : 1;
-                        if(input_file_resource[i].screen_posx == 0)
-                            SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i-j) + i * h/16);
-                        else 
-                            SDL_SetWindowPosition(window[i], input_file_resource[i].screen_posx, input_file_resource[i].screen_posy);
-                        SDL_ShowWindow( window[i]);                
-                        SDL_RaiseWindow( window[i] );
-                    }
+                if(show) {
+                    refresh_video();
                 }
             }
         }
@@ -2816,9 +2885,7 @@ static int stream_component_open(VideoState *is, int stream_index)
            || is_second_display)
         is->muted = 1;
 
-        //else
         SDL_PauseAudioDevice(is->devID, 0); 
-        //SDL_PauseAudio(0); 
 
         break;
     case AVMEDIA_TYPE_VIDEO:
@@ -3334,28 +3401,6 @@ static void toggle_full_screen(VideoState *is)
     SDL_SetWindowFullscreen(window[is->idx_screen], is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 }
 
-static void switch_full_screen(VideoState *is)
-{
-    if(is->idx_screen == main_screen) return;
-    SDL_SetWindowPosition(window[is->idx_screen], 0, 0);
-    SDL_SetWindowSize (window[is->idx_screen], default_width , default_height);
-    is->width  = default_width;
-    is->height = default_height;
-    main_screen = is->idx_screen;
-}
-
-static void switch_sub_screen(VideoState *is)
-{
-    //if(is->idx_screen != main_screen)  return;
-    //if(is->width != default_width || is->width != screen_width) return;
-    SDL_SetWindowSize (window[is->idx_screen], default_width / 4 , default_height / 4);
-    //SDL_SetWindowPosition(window[is->idx_screen], 0, 0);
-    is->width  = default_width / 4;
-    is->height = default_height / 4;
-}
-
-
-
 static void toggle_audio_display(VideoState *is)
 {
     int next = is->show_mode;
@@ -3380,7 +3425,8 @@ static void refresh_loop_wait_event(VideoState *is[], SDL_Event *event) {
             av_usleep((int64_t)(remaining_time * 1000000.0));
         }
         remaining_time = REFRESH_RATE;
-        for(int i = 0 ; i <= nb_input_files; i++) {      
+        for(int i = 0 ; i <= nb_input_files; i++) { 
+            if(is[i] == NULL) continue;
             if(0 != begin_time_value[i]  && media_status[i] != 2) {
                 int64_t time_now = av_gettime();
                 if(time_now > begin_time_value[i] * 1000) {
@@ -3423,6 +3469,43 @@ static void seek_chapter(VideoState *is, int incr)
     av_log(NULL, AV_LOG_VERBOSE, "Seeking to chapter %d.\n", i);
     stream_seek(is, av_rescale_q(is->ic->chapters[i]->start, is->ic->chapters[i]->time_base,
                                  AV_TIME_BASE_Q), 0, 0);
+}
+
+static void inform_server(char * server_addr, char * stream) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    struct sockaddr_in server;
+
+    int client_socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(client_socket_fd < 0)
+    {
+         perror("Create Socket Failed:");
+         return ;
+    }
+    
+    pch = strtok (server_addr, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "delete ");
+    strcpy(buffer+strlen(buffer), stream);
+    
+    if(sendto(client_socket_fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Modify] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
 /* handle an event sent by the GUI */
@@ -3828,6 +3911,111 @@ static void event_loop(VideoState *cur_stream[])
         case FF_QUIT_EVENT:
             do_all_exit(cur_stream);
             break;
+
+            // it indicates "delete" request
+        case SDL_USEREVENT:
+            {
+                int index = event.user.code;
+                int i = 0;
+                av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d required to be DELETEd\n", input_filename[index], index);
+
+                // first to hide the window to prevent the picture flutter 
+                SDL_HideWindow(window[index]);
+
+                if (global_is[index])  stream_close(global_is[index]);
+                 // Warning must set to NULL right now!!!
+                global_is[index] = NULL;  
+
+                if (renderer[index])
+                    SDL_DestroyRenderer(renderer[index]);
+                if (window[index])
+                    SDL_DestroyWindow(window[index]);
+                window[index] = NULL;
+                renderer[index] = NULL;
+
+                //free(input_filename[index]);
+
+                //then  to shift the array because the delete operation may cause a slot
+                for(i = index; i < nb_input_files; i++)
+                {
+                    input_filename[i] = input_filename[i+1];
+                    global_is[i] = global_is[i+1];
+                    window[i] = window[i+1];
+                    renderer[i] = renderer[i+1];
+                    global_is[i]->idx_screen--;
+                    memcpy(&input_file_resource[i], &input_file_resource[i+1], sizeof(ResourceParam));
+                    begin_time_key[i] = begin_time_key[i+1];
+                    begin_time_value[i] = begin_time_value[i+1];
+                    media_status[i] = media_status[i+1];
+                }
+
+                // finally set the last slot to null
+                input_file_resource[i].screen_posx = -1;
+                global_is[i] = NULL;
+                window[i] = NULL;
+                renderer[i] = NULL;
+                nb_input_files--;
+
+                refresh_video();
+                break;
+            }
+         // indicating "modify" command
+        case SDL_USEREVENT + 1:
+            {
+                int index = event.user.code;
+                int tmp = 0;
+                char stream[100];
+                av_log(NULL, AV_LOG_WARNING, "[Modifying] address %s index %d required to be Modified\n", input_filename[index], index);
+
+                // first to hide the window to prevent the picture flutter 
+                
+                SDL_ShowWindow(window[nb_input_files]);                
+                SDL_RaiseWindow(window[nb_input_files]);
+                SDL_HideWindow(window[index]);
+
+                tmp = global_is[index]->idx_screen;
+                if (global_is[index])  stream_close(global_is[index]);
+                 // Warning must set to NULL right now!!!
+                global_is[index] = NULL;  
+
+                if (renderer[index])
+                    SDL_DestroyRenderer(renderer[index]);
+                if (window[index])
+                    SDL_DestroyWindow(window[index]);
+                window[index] = NULL;
+                renderer[index] = NULL;
+
+                strcpy(stream, input_filename[index]);
+                //free(input_filename[index]);
+
+                //then upate the slot data to the end of the array
+                input_filename[index] = input_filename[nb_input_files];
+                global_is[index] = global_is[nb_input_files];
+                window[index] = window[nb_input_files];
+                renderer[index] = renderer[nb_input_files];
+                global_is[index]->idx_screen = tmp;
+                memcpy(&input_file_resource[index], &input_file_resource[nb_input_files], sizeof(ResourceParam));
+                begin_time_key[index] = begin_time_key[nb_input_files];
+                begin_time_value[index] = begin_time_value[nb_input_files];
+                media_status[index] = media_status[nb_input_files];
+              
+
+                // finally set the last slot to null
+                input_file_resource[nb_input_files].screen_posx = -1;
+                global_is[nb_input_files] = NULL;
+                window[nb_input_files] = NULL;
+                renderer[nb_input_files] = NULL;
+                nb_input_files--;
+
+                is_modify = 0;
+                refresh_video();
+
+
+                // inform the server to delete the 
+                inform_server(modify_server, stream);
+                break;
+            }
+    
         default:
             break;
         }
@@ -3864,6 +4052,11 @@ static int opt_posY(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_port(void *optctx, const char *opt, const char *arg)
+{
+    port = parse_number_or_die(opt, arg, OPT_INT64, 0, INT_MAX);
+    return 0;
+}
 
 static int opt_format(void *optctx, const char *opt, const char *arg)
 {
@@ -4029,7 +4222,8 @@ static const OptionDef options[] = {
     { "autorotate", OPT_BOOL, { &autorotate }, "automatically rotate video", "" },
     // for the second display    
     { "second", OPT_BOOL, { &is_second_display}, "display as the second TV" },    
-    { "smtsync", OPT_BOOL, { &is_smt_sync}, "to make sync for smt" },
+    { "smtsync", OPT_BOOL, { &is_smt_sync}, "to make sync for smt" },    
+    { "port", HAS_ARG, { .func_arg = opt_port }, "set listening port", "port" },
     { NULL, },
 };
 
@@ -4096,11 +4290,252 @@ static int lockmgr(void **mtx, enum AVLockOp op)
 }
 
 
+static void init_windows_resource(void) {
+    int i = 0;
+    for(; i < MAX_SCREEN_FLOWS; i++) {
+        input_file_resource[i].screen_posx = -1;
+        input_file_resource[i].screen_posy = -1;
+        input_file_resource[i].screen_width= -1;
+        input_file_resource[i].screen_heigth= -1;
+    }
+}
+static int handle_command(char * command)
+{
+    char * pch;
+    char * added_address; 
+    char * delete_address;
+    pch = strtok (command, " ");
+
+    if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
+        int i = 0;
+        pch = strtok (NULL, " ");
+        delete_address = pch;
+        if(delete_address == NULL) return -1; 
+        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELETE\n", delete_address);
+
+        for( i = 0; i <= nb_input_files; i++) {
+            if(strcmp(delete_address, input_filename[i]) == 0) {
+                
+                // Be aware to handle the is[] in the event_loop()
+                // because the other thread may using the is[] at the same time
+                // stream_close() here could cause segment fault
+                
+                // So the solution is to generate an user event (indicating delete command)
+                // and let event_loop to handle it
+                
+                SDL_Event e;
+                SDL_zero(e);
+    
+                e.type = SDL_USEREVENT;
+                e.user.code = i;    
+                
+                SDL_PushEvent(&e);
+                break;
+            }
+        }
+
+        if ( i > nb_input_files) {            
+            av_log(NULL, AV_LOG_ERROR, "[Result] address %s does NOT exist\n", delete_address);
+            return -1;
+         }
+    }
+    else if(strcmp (pch, "add") == 0) {  
+        pch = strtok (NULL, " ");
+        added_address = pch;
+        if(added_address != NULL) { 
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be ADDed\n", added_address);
+  
+            if(nb_input_files == MAX_SCREEN_FLOWS) {
+                av_log(NULL, AV_LOG_ERROR, "[Result] ADDed failed due to maximum streams %d \n", nb_input_files);
+                return -1;
+            }
+            // using ',' as the delimiter
+             pch = strtok (added_address, ",");
+
+            if(pch != NULL) {
+                int i = 0;
+                while (pch != NULL)
+                {
+                    char *tail;
+                    double d;
+                    if(i == 0) { pch = strtok (NULL, ","); i++; continue;}
+
+                    d = av_strtod(pch, &tail);
+                    if (*tail) exit_program(1);
+                    switch(i) {
+                        case 1:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
+                        case 2:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
+                        case 3:   input_file_resource[nb_input_files+1].screen_width= d;  break;
+                        case 4:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
+                    }
+                    pch = strtok (NULL, ",");
+                    i++;
+                }
+            }
+            input_filename[nb_input_files+1] = av_strdup(added_address);
+            
+            begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
+            if(is_smt_sync) {
+                media_status[nb_input_files+1] = 1;
+            }
+            else {
+                media_status[nb_input_files+1] = 2;
+            }
+            global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
+            if (!global_is[nb_input_files+1]) {
+                av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
+                do_all_exit(global_is);
+            }
+            global_is[nb_input_files+1]->idx_screen= nb_input_files+1;
+            nb_input_files++;
+        }
+        else {
+            return -1;
+        }
+            
+    }
+    // note: in order to switch the stream smoothly, we need to soft handoff rather than hard handoff
+    // that means we should first add new stream then delete the orignal stream
+    else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
+        int i;
+        char * server_address;
+        pch = strtok (NULL, " ");
+        server_address = pch;
+        pch = strtok (NULL, " ");
+        delete_address = pch;
+        pch = strtok (NULL, " ");
+        added_address = pch;
+        if(added_address != NULL && delete_address != NULL ) { 
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be Modified to address %s from %s\n", delete_address, added_address, server_address);
+
+            for( i = 0; i <= nb_input_files; i++) {
+                if(strcmp(delete_address, input_filename[i]) == 0) {
+                    break;
+                }
+            }
+
+            if( i > nb_input_files ) {
+                av_log(NULL, AV_LOG_WARNING, "[Modify Failed] address %s not Found, cannot be modified\n", delete_address);
+                return -1;
+            } 
+            if(nb_input_files == MAX_SCREEN_FLOWS) {
+                av_log(NULL, AV_LOG_ERROR, "[Modify Failed] ADDed failed due to maximum streams %d \n", nb_input_files);
+                return -1;
+            }
+            modify_index = i;
+            is_modify = 1;
+            modify_server = av_strdup(server_address);
+              // using ',' as the delimiter
+             pch = strtok (added_address, ",");
+
+            if(pch != NULL) {
+                int i = 0;
+                while (pch != NULL)
+                {
+                    char *tail;
+                    double d;
+                    if(i == 0) { pch = strtok (NULL, ","); i++; continue;}
+
+                    d = av_strtod(pch, &tail);
+                    if (*tail) exit_program(1);
+                    switch(i) {
+                        case 1:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
+                        case 2:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
+                        case 3:   input_file_resource[nb_input_files+1].screen_width= d;  break;
+                        case 4:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
+                    }
+                    pch = strtok (NULL, ",");
+                    i++;
+                }
+            }
+            input_filename[nb_input_files+1] = av_strdup(added_address);
+            
+            begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
+            if(is_smt_sync) {
+                media_status[nb_input_files+1] = 1;
+            }
+            else {
+                media_status[nb_input_files+1] = 2;
+            }
+            global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
+            if (!global_is[nb_input_files+1]) {
+                av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
+                do_all_exit(global_is);
+            }
+            global_is[nb_input_files+1]->idx_screen= nb_input_files+1;
+            nb_input_files++;
+        }
+        else
+            return -1;
+    }
+    else {        
+      av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
+      return -1;
+    }
+      
+    return 1;
+}
+
+static void *listening_read_thread(void *arg)
+{
+    while(1) 
+    {  
+         socklen_t client_addr_length = sizeof(client_addr); 
+         
+         char command[1024]; 
+         memset(command, 0, 1024); 
+         if(recvfrom(socket_fd, command, 1024,0,(struct sockaddr*)&client_addr, &client_addr_length) == -1) 
+         { 
+            return;
+         } 
+
+         /* Remove trailing newline, if there. */
+         if ((strlen(command)>0) && (command[strlen(command) - 1] == '\n')) {
+             command[strlen(command) - 1] = '\0';
+         } 
+
+         if(strlen(command) == 0)
+            continue;
+
+         av_log(NULL, AV_LOG_INFO, "[command] receive: [%s] from address %s\n", command, inet_ntoa(client_addr.sin_addr));
+
+         handle_command(command);
+
+    }
+    return;
+
+}
+
+static int listening_open(const int port)
+{
+    struct sockaddr_in server_addr; 
+    int ret = -1;
+    memset(&server_addr, 0, sizeof(server_addr)); 
+    server_addr.sin_family = AF_INET; 
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    server_addr.sin_port = htons(port); 
+    
+    socket_fd = socket(AF_INET, SOCK_DGRAM, 0); 
+    if(socket_fd == -1) 
+    { 
+       return ret;
+    } 
+    if(-1 == (bind(socket_fd,(struct sockaddr*)&server_addr,sizeof(server_addr)))) 
+    { 
+       return ret;
+    } 
+
+    av_log(NULL, AV_LOG_INFO, "[command] succeed in binding the listening port [%d]\n", port);
+    ret = pthread_create(&listening_tid, NULL, listening_read_thread, NULL);
+
+    return ret;
+}
+
+
 /* Called from the main */
 int main(int argc, char **argv)
 {
     int flags;
-    VideoState *is[MAX_SCREEN_FLOWS];
     //char   [] = "SDL_VIDEODRIVER=dummy";
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
@@ -4123,11 +4558,18 @@ int main(int argc, char **argv)
 
     show_banner(argc, argv, options);
 
+    init_windows_resource();
     parse_options(NULL, argc, argv, options, opt_input_file);
 
-    if (!input_filename[0]) {
+    if(port) {
+        if(-1 == listening_open(port))
+            av_log(NULL, AV_LOG_WARNING, "listening server cannot start on port %d .\n", port);
+            
+    }
+
+    if (!input_filename[0] && port == 0) {
         show_usage();
-        av_log(NULL, AV_LOG_FATAL, "An input file must be specified\n");
+        av_log(NULL, AV_LOG_FATAL, "An input file or a listening port must be specified\n");
         av_log(NULL, AV_LOG_FATAL,
                "Use -h to get full help or, even better, run 'man %s'\n", program_name);
         exit(1);
@@ -4170,24 +4612,17 @@ int main(int argc, char **argv)
         else {
             media_status[i] = 2;
         }
-        is[i] = stream_open(input_filename[i], file_iformat);
-        if (!is[i]) {
+        global_is[i] = stream_open(input_filename[i], file_iformat);
+        if (!global_is[i]) {
             av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
-            do_all_exit(is);
+            do_all_exit(global_is);
         }
-        is[i]->idx_screen= i;
-        //is[i]->filename = input_filename[i];
+        global_is[i]->idx_screen= i;
         //SDL_CreateThread(video_display_thread, "sub video display", is[i]);
-
-        // SDL2 seems to have bug when several windows start in different threads at the same time
-        // the behavior is the SDL_Create_Windows return success while window is black or empty
-        // so i force to sleep to leave enough time for a SDL window draw
-        //av_usleep((int64_t)(300000.0));
-        
     }
 
 
-    event_loop(is);
+    event_loop(global_is);
 
     /* never returns */
 

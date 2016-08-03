@@ -193,16 +193,18 @@ static int handle_command(char * command)
 {
     char * pch;
     char * added_address; 
+    char * delete_address;
     pch = strtok (command, " ,-");
 
-    if(strcmp (pch, "del") == 0) {  
+    if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
         
         int i;
         pch = strtok (NULL, " ,-");
-
-        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELed\n", pch?pch:inet_ntoa(client_addr.sin_addr));
+        delete_address = pch;
+        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELed\n", delete_address?delete_address:inet_ntoa(client_addr.sin_addr));
 
         #if 0
+        int i;
         for (i = 0; i < nb_output_streams; i++) {
             OutputStream *ost    = output_streams[i];
             OutputFile *of       = output_files[ost->file_index];
@@ -254,7 +256,7 @@ static int handle_command(char * command)
         }        
         #endif
         
-        smt_del_delivery_url(pch?pch:inet_ntoa(client_addr.sin_addr)); 
+        smt_del_delivery_url(delete_address?delete_address:inet_ntoa(client_addr.sin_addr)); 
     }
     else if(strcmp (pch, "add") == 0) {  
         int i;
@@ -266,6 +268,8 @@ static int handle_command(char * command)
             printf("add");    
 
             #if 0
+            int i;
+            OptionsContext o;
             for (i = 0; i < nb_output_streams; i++) {
                 OutputStream *ost    = output_streams[i];
                 OutputFile *of       = output_files[ost->file_index];
@@ -305,6 +309,28 @@ static int handle_command(char * command)
             return -1;
         }
             
+    }
+
+    // note: in order to switch the stream smoothly, we need to soft handoff rather than hard handoff
+    // that means we should first add new stream then delete the orignal stream
+    else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
+        pch = strtok (NULL, " ,-");
+        delete_address = pch;
+        pch = strtok (NULL, " ,-");
+        added_address = pch;
+        if(added_address != NULL && delete_address != NULL) { 
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be Modified to address %s\n", delete_address, added_address);
+            printf("modify");   
+            
+            smt_add_delivery_url(added_address);
+
+            // TODO: minghaol   block!  need to be updated 
+            sleep(3);
+            
+            smt_del_delivery_url(delete_address); 
+        }
+        else
+            return -1;
     }
     else {        
       av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
