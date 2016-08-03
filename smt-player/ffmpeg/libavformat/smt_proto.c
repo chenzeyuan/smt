@@ -426,12 +426,13 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
 
                     int index = get_index_of_input_url(h->filename);
                     if(-1 != index ) {
-                        if(last_packet_counter[index] + 1 == p->packet_counter ) {
+                        if(last_packet_counter[index] + 1 == p->packet_counter || p->packet_counter == 0) {
                         } else {
-                            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%d\"}\n", 
+                            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
                                                             h->filename,
                                                             p->packet_counter - last_packet_counter[index] -1,
-                                                            p->packet_counter );
+                                                            p->packet_counter,
+                                                            last_packet_counter[index]);
 
                         }
                         last_packet_counter[index] = p->packet_counter;
@@ -981,7 +982,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                 p->packet_sequence_number,
                                 p->packet_counter );
                         if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
-                            begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
+                            begin_time_value[index] = time_zero_us / 1000 + (int64_t)p->timestamp; 
                         }
                     }
 
