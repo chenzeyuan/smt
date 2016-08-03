@@ -222,11 +222,10 @@ static int Dequeue(Queue *q, void **data) {
     return len;
 }
 
-static void smt_calc_rate2(struct SMT4AvLogExt *info, char *filename, int len, int max_size) {
-#define MAX_SEND_NUM 200
+static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, int number_size) {
     if(0 == info->send_counter) {
         info->start_time = av_gettime();
-    } else if( max_size <= info->send_counter) {
+    } else if( number_size <= info->send_counter) {
         int64_t end_time = av_gettime();
         float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
         av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
@@ -238,49 +237,19 @@ static void smt_calc_rate2(struct SMT4AvLogExt *info, char *filename, int len, i
     info->len_sum += len;
     info->send_counter++;
 }
+
+#define MAX_BPS  (25 * 1024 * 1024)
+#define NUMBER_SIZE 1000
 static void send_socket_cache(Queue *q) {
 
     void *buf = NULL;
     int ret;
-    static int smooth_delay_time = 1;
+    int delay_time = 1; //
     SMTContext *s = q->h->priv_data;
-    int MAX_DELAY = 10000;
-    int CACHE_DELAY_TIME = 1000E3;
-    int MAX_BPS = 25 * 1024 * 1024;
-    smooth_delay_time =  MTU * 8 * 1E6 / MAX_BPS;
-    smooth_delay_time -= 60;
-    smooth_delay_time = smooth_delay_time < 1? 1:smooth_delay_time;
+    delay_time =  MTU * 8 * 1E6 / MAX_BPS;
+    delay_time -= 60;  //subtract program processing time
+    delay_time = delay_time < 1? 1:delay_time;
     while(1) {
-#if 0
-        int delay_time = 0;
-        int cache_size = GetQueueSize(q) ;
-        /*
-        if( cache_size < CACHE_SIZE / 8) {
-            delay_time  = MAX_DELAY;
-        } else if(cache_size > 3 * CACHE_SIZE /4 ) {
-            delay_time = 0;
-        } else {
-            delay_time = MAX_DELAY - MAX_DELAY * (8 * cache_size - CACHE_SIZE) / (5 * CACHE_SIZE);
-        }
-        */
-        if(cache_size == 0) cache_size = 1;
-        delay_time = CACHE_DELAY_TIME / cache_size;
-        delay_time = delay_time > 10E3?10E3:delay_time;
-        int diff = smooth_delay_time - delay_time;
-        diff = diff < 0 ? -diff:diff;
-        float ff = 1.0f * diff / smooth_delay_time;
-        int  step = 0;
-        if(ff < 0.2) step = 0;
-        else if( ff < 0.8) step = 1;
-        else step = 5;
-        smooth_delay_time = (smooth_delay_time * (100-step)) /100 + delay_time * step/100 ;
-        if(smooth_delay_time < 1) smooth_delay_time = 1;
-        
-        if(step > 0) {
-            av_log(NULL, AV_LOG_INFO, "cache_size=%d, delay_time=%d\n", cache_size, smooth_delay_time);
-        }
-#endif
-
         int len = Dequeue(q, &buf);
         if(NULL == buf) continue;
 
@@ -288,7 +257,6 @@ static void send_socket_cache(Queue *q) {
             if (!s->is_connected) {
                 if(s->smt_fd[i] == NULL) continue;
                 struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-                //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), dest_addr->sin_port);
                 ret = sendto (s->smt_fd[i], buf, len, 0,
                         (struct sockaddr *) &s->dest_addr[i],
                         s->dest_addr_len[i]);
@@ -296,9 +264,9 @@ static void send_socket_cache(Queue *q) {
                 if(s->smt_fd[i] == NULL) continue;
                 ret = send(s->smt_fd[i], buf, len, 0);
             }
-            smt_calc_rate2(&s->info_av_log_ext, q->h->filename, len, 1000 * s->smt_fd_size);
+            smt_calc_rate(&s->info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
       }
-      av_usleep(smooth_delay_time);
+      av_usleep(delay_time);
       free(buf);
     }
 }
@@ -324,47 +292,6 @@ static void set_socket_cache_queue(URLContext *h) {
 
 
 /* ----------------------------------------------*/
-
-#if 0
-static void smt_calc_rate2(struct SMT4AvLogExt *info, char *filename, int len) {
-    
-#define MAX_SEND_NUM 200
-    if(0 == info->send_counter) {
-        info->start_time = av_gettime();
-    } else if( MAX_SEND_NUM == info->send_counter) {
-        int64_t end_time = av_gettime();
-        float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
-        av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
-        info->start_time = 0;
-        info->send_counter = 0;
-        info->len_sum = 0;
-        return;
-    }
-    info->len_sum += len;
-    info->send_counter++;
-}
-#endif
-
-static void smt_calc_rate(char *filename, int len) {
-#define MAX_SEND_NUM 200
-    static int send_counter = -1;
-    static int64_t start_time = 0;
-    static int64_t len_sum = 0;
-
-    len_sum += len;
-    send_counter++;
-    if(0 == send_counter) {
-        start_time = av_gettime();
-    } else if( MAX_SEND_NUM == send_counter) {
-        int64_t end_time = av_gettime();
-        float rate = len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - start_time));
-        av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
-        start_time = 0;
-        send_counter = -1;
-        len_sum = 0;
-    }
-}
-
 
 #define SMT_OUTPUT_CACHE_CONTROL
 static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
@@ -393,7 +320,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
         }
-        smt_calc_rate2(&s->info_av_log_ext, h->filename, len, 100);
+        smt_calc_rate(&s->info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
     }
     av_usleep(500);
 #endif
