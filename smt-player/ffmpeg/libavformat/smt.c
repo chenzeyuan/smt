@@ -48,6 +48,12 @@
 
 #define SMT_MAX_DELIVERY_NUM    10
 
+typedef struct SMT4AvLogExt {
+    int     send_counter;
+    int64_t start_time;
+    int64_t len_sum;
+} SMT4AvLogExt;
+
 typedef struct SMTContext {
     const AVClass *class;
     int smt_fd[SMT_MAX_DELIVERY_NUM];
@@ -76,6 +82,7 @@ typedef struct SMTContext {
     int audio_head_available, video_head_available;
     smt_receive_entity *receive;
     smt_send_entity *send;
+    struct SMT4AvLogExt info_av_log_ext;
 } SMTContext;
 
 static unsigned int consumption_length = 0;
@@ -149,38 +156,163 @@ static void smt_on_get_id(URLContext *h, smt_sig *sig)
 {
 
 }
-static void smt_calc_rate(char *filename, int len) {
-#define MAX_SEND_NUM 2000
-    static int send_counter = -1;
-    static int64_t start_time = 0;
-    static int64_t len_sum = 0;
 
-    len_sum += len;
-    send_counter++;
-    if(0 == send_counter) {
-        start_time = av_gettime();
-    } else if( MAX_SEND_NUM == send_counter) {
+/* ----------------------------------------------*/
+#define CACHE_SIZE 10000
+typedef struct SeqQueue {
+    char  *data[CACHE_SIZE];
+    int   len[CACHE_SIZE];
+    int   front;
+    int   rear;
+    pthread_mutex_t q_lock;
+    pthread_cond_t cond;
+    int init_flag;
+    URLContext *h;
+}Queue;
+
+Queue cache_queue;
+
+static Queue *InitQueue(Queue *q) {
+    q->front = 0;
+    q->rear = 0;
+    pthread_mutex_init(&q->q_lock, NULL);      
+    pthread_cond_init(&q->cond, NULL);
+    return q;
+}
+
+static Queue *GetQueue() {
+    return &cache_queue;
+}
+
+static int IsFull(Queue *q) {
+    return ((q->rear+1)%CACHE_SIZE == q->front);
+}
+
+static int IsEmpty(Queue *q) {
+    return (q->front == q->rear);
+}
+
+static int GetQueueSize(Queue *q) {
+    return (q->rear + CACHE_SIZE - q->front)%CACHE_SIZE;
+}
+
+
+static void Enqueue(void *data, int len) { 
+    Queue *q = GetQueue();
+    pthread_mutex_lock(&q->q_lock);
+    if(q && data && !IsFull(q)) {
+        q->data[q->rear] = data;
+        q->len[q->rear] = len;
+        q->rear = (q->rear+1)%CACHE_SIZE;
+        pthread_cond_signal(&q->cond);
+    }
+    pthread_mutex_unlock(&q->q_lock);
+}
+
+static int Dequeue(Queue *q, void **data) {
+    int len;
+    pthread_mutex_lock(&q->q_lock);
+    while(IsEmpty(q)) {
+        pthread_cond_wait(&q->cond, &q->q_lock);
+    }
+    *data = q->data[q->front];
+    len = q->len[q->front];
+    q->front = (q->front+1)%CACHE_SIZE;
+    pthread_mutex_unlock(&q->q_lock);
+    return len;
+}
+
+static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, int number_size) {
+    if(0 == info->send_counter) {
+        info->start_time = av_gettime();
+    } else if( number_size <= info->send_counter) {
         int64_t end_time = av_gettime();
-        float rate = len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - start_time));
+        float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
         av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
-        start_time = 0;
-        send_counter = -1;
-        len_sum = 0;
+        info->start_time = 0;
+        info->send_counter = 0;
+        info->len_sum = 0;
+        return;
+    }
+    info->len_sum += len;
+    info->send_counter++;
+}
+
+#define MAX_BPS  (25 * 1024 * 1024)
+#define NUMBER_SIZE 1000
+static void send_socket_cache(Queue *q) {
+
+    void *buf = NULL;
+    int ret;
+    int delay_time = 1; //
+    SMTContext *s = q->h->priv_data;
+    delay_time =  MTU * 8 * 1E6 / MAX_BPS;
+    delay_time -= 60;  //subtract program processing time
+    delay_time = delay_time < 1? 1:delay_time;
+    while(1) {
+        int len = Dequeue(q, &buf);
+        if(NULL == buf) continue;
+
+        for(int i = 0 ; i < s->smt_fd_size; i++) {
+            if (!s->is_connected) {
+                if(s->smt_fd[i] == NULL) continue;
+                struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
+                ret = sendto (s->smt_fd[i], buf, len, 0,
+                        (struct sockaddr *) &s->dest_addr[i],
+                        s->dest_addr_len[i]);
+            } else {
+                if(s->smt_fd[i] == NULL) continue;
+                ret = send(s->smt_fd[i], buf, len, 0);
+            }
+            smt_calc_rate(&s->info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
+      }
+      av_usleep(delay_time);
+      free(buf);
     }
 }
+
+
+
+
+void init_send_socket_cache() {
+    pthread_t send_socket_cache_thread;
+    send_socket_cache_thread= pthread_create(&send_socket_cache_thread, NULL, send_socket_cache, GetQueue());
+}
+
+static void set_socket_cache_queue(URLContext *h) {
+    Queue *q = GetQueue();
+    pthread_mutex_lock(&q->q_lock);
+    if(q->init_flag == 0) {
+        q->h = h;
+        init_send_socket_cache();
+        q->init_flag = 1;
+    }
+    pthread_mutex_unlock(&q->q_lock);
+}
+
+
+/* ----------------------------------------------*/
+
+#define SMT_OUTPUT_CACHE_CONTROL
 static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 {
     SMTContext *s = h->priv_data;
     int ret;
     int i;
 
-    av_log(NULL, AV_LOG_INFO, "sending data to %d clients\n", s->smt_fd_size);
+    //av_log(NULL, AV_LOG_INFO, "sending data to %d clients\n", s->smt_fd_size);
+#ifdef SMT_OUTPUT_CACHE_CONTROL
+    set_socket_cache_queue(h);
+    void *data = malloc(len);
+    memcpy(data, buf, len);
+    Enqueue(data, len);
+#else
     for(i = 0 ; i < s->smt_fd_size; i++) {
         if (!s->is_connected) {
             if(s->smt_fd[i] == NULL) continue;
 
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-            av_log(NULL, AV_LOG_INFO, "sending data to client %s:d\n", inet_ntoa(dest_addr->sin_addr), dest_addr->sin_port);
+            av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), dest_addr->sin_port);
             ret = sendto (s->smt_fd[i], buf, len, 0,
                           (struct sockaddr *) &s->dest_addr[i],
                           s->dest_addr_len[i]);
@@ -188,17 +320,21 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
         }
-        smt_calc_rate(h->filename, len);
+        smt_calc_rate(&s->info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
+    }
+    av_usleep(500);
+#endif
+    /*
         switch(s->smt_fd_size) {
             case 1:   av_usleep(100);  break;
-            case 2:   av_usleep(80);  break;
-            case 3:   av_usleep(60);  break;
-            case 4:   av_usleep(40);  break;
-            case 5:   av_usleep(20);  break;
+            case 2:   av_usleep(200);  break;
+            case 3:   av_usleep(300);  break;
+            case 4:   av_usleep(400);  break;
+            case 5:   av_usleep(500);  break;
             default:
                 break;
-        }
-    }
+        } 
+        */
     return ret < 0 ? ff_neterrno() : ret;
 
 }
@@ -696,6 +832,8 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
 {
     SMTContext *s = h->priv_data;
     smt_status status;
+    
+    av_log(NULL, AV_LOG_INFO, "\n %s \n",__FUNCTION__);
     if(!options)
         return AVERROR(EINVAL);
     AVDictionaryEntry *entry = av_dict_get(options, "smt_payload_size", NULL, AV_DICT_MATCH_CASE);
