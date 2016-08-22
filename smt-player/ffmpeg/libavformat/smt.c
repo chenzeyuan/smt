@@ -293,7 +293,7 @@ static void set_socket_cache_queue(URLContext *h) {
 
 /* ----------------------------------------------*/
 
-#define SMT_OUTPUT_CACHE_CONTROL
+//#define SMT_OUTPUT_CACHE_CONTROL
 static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 {
     SMTContext *s = h->priv_data;
