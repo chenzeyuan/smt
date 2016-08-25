@@ -191,7 +191,8 @@ enum {
     AV_SYNC_AUDIO_MASTER, /* default choice */
     AV_SYNC_VIDEO_MASTER,
     AV_SYNC_EXTERNAL_CLOCK, /* synchronize to an external clock */
-};
+    AV_SYNC_SMT_CLOCK,      /* synchronize to an smt clock, sync ntp */
+}; 
 
 typedef struct Decoder {
     AVPacket pkt;
@@ -1662,6 +1663,8 @@ static int get_master_sync_type(VideoState *is) {
             return AV_SYNC_AUDIO_MASTER;
         else
             return AV_SYNC_EXTERNAL_CLOCK;
+    } else if(is->av_sync_type == AV_SYNC_SMT_CLOCK) {
+        return AV_SYNC_SMT_CLOCK;
     } else {
         return AV_SYNC_EXTERNAL_CLOCK;
     }
@@ -1678,6 +1681,14 @@ static double get_master_clock(VideoState *is)
             break;
         case AV_SYNC_AUDIO_MASTER:
             val = get_clock(&is->audclk);
+            break;
+        case AV_SYNC_SMT_CLOCK:
+            if( 0 == begin_time_value) 
+            {
+                val = NAN;
+            } else {
+                val = av_gettime()/1000000.0 - begin_time_value[is->idx_screen]/1000.0;
+            }
             break;
         default:
             val = get_clock(&is->extclk);

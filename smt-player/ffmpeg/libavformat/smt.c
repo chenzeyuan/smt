@@ -322,7 +322,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
         }
         smt_calc_rate(&s->info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
     }
-    av_usleep(500);
+    av_usleep(50);
 #endif
     /*
         switch(s->smt_fd_size) {

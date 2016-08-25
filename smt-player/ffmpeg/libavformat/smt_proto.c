@@ -33,6 +33,9 @@ extern smt_callback     smt_callback_entity;
 int64_t begin_time = 0;
 int64_t diff_time = 0;
 //for ffplay
+#if defined(__ANDROID__)
+int64_t begin_time_value = 0;
+#else
 char*   begin_time_key[INPUT_URL_NUM_MAX];
 int64_t begin_time_value[INPUT_URL_NUM_MAX];
 unsigned int last_packet_counter[INPUT_URL_NUM_MAX];
@@ -53,7 +56,7 @@ static int get_index_of_input_url(char* key) {
     }
     return foundindex;
 }
-
+#endif
 
 static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
 {
@@ -423,7 +426,7 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
-
+#if !defined(__ANDROID__)
                     int index = get_index_of_input_url(h->filename);
                     if(-1 != index ) {
                         if(last_packet_counter[index] + 1 == p->packet_counter || p->packet_counter == 0) {
@@ -438,7 +441,7 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                         last_packet_counter[index] = p->packet_counter;
                     }
 
-                    
+#endif                    
                     recv->process_position += 16;
                     recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER_EXTENSION;
                 }
@@ -962,13 +965,19 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
                     { 
                         int64_t now_time_us =  av_gettime();
-                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
+                        time_t  now_time_s = (time_t)(now_time_us/ (1000*1000));//time(NULL);
                         struct tm today_zero_time = *localtime(&now_time_s);
                         today_zero_time.tm_hour = 0;
                         today_zero_time.tm_min  = 0;
                         today_zero_time.tm_sec  = 0;
                         time_t time_zero_s = mktime(&today_zero_time);
-                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
+                        int64_t time_zero_us = now_time_us - ((int64_t)(now_time_s - time_zero_s ))*1000*1000 - (now_time_us%(1000*1000));
+#if defined(__ANDROID__)
+                    if( 0 == smt_callback_entity.get_begin_time(h) && p->packet_id == 0 )  { 
+                        begin_time_value = time_zero_us / 1000 + (int64_t)p->timestamp; 
+                        smt_callback_entity.set_begin_time(h, begin_time_value);
+                    }
+#else
                         int index = get_index_of_input_url(h->filename);
                         int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
                         int64_t todaytime = now_time_us - time_zero_us;
@@ -981,9 +990,10 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                 p->packet_id,
                                 p->packet_sequence_number,
                                 p->packet_counter );
-                        if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
-                            begin_time_value[index] = time_zero_us / 1000 + (int64_t)p->timestamp; 
+                        if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 1 )  { 
+                            begin_time_value[index] = timestamp_64 / 1000; 
                         }
+#endif
                     }
 
 
