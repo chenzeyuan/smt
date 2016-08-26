@@ -87,9 +87,9 @@ int media_status[MAX_SCREEN_FLOWS];//0:   1:initialed 2:started
 #define SDL_VOLUME_STEP (SDL_MIX_MAXVOLUME / 50)
 
 /* no AV sync correction is done if below the minimum AV sync threshold */
-#define AV_SYNC_THRESHOLD_MIN 0.04
+#define AV_SYNC_THRESHOLD_MIN 0.01
 /* AV sync correction is done if above the maximum AV sync threshold */
-#define AV_SYNC_THRESHOLD_MAX 0.1
+#define AV_SYNC_THRESHOLD_MAX 0.05
 /* If a frame duration is longer than this, it will not be duplicated to compensate AV sync */
 #define AV_SYNC_FRAMEDUP_THRESHOLD 0.1
 /* no AV correction is done if too big error */
@@ -1683,7 +1683,7 @@ static double get_master_clock(VideoState *is)
             val = get_clock(&is->audclk);
             break;
         case AV_SYNC_SMT_CLOCK:
-            if( 0 == begin_time_value) 
+            if( 0 == begin_time_value[is->idx_screen]) 
             {
                 val = NAN;
             } else {
@@ -4053,6 +4053,9 @@ static int opt_sync(void *optctx, const char *opt, const char *arg)
         av_sync_type = AV_SYNC_VIDEO_MASTER;
     else if (!strcmp(arg, "ext"))
         av_sync_type = AV_SYNC_EXTERNAL_CLOCK;
+    else if (!strcmp(arg, "smt"))
+        av_sync_type = AV_SYNC_SMT_CLOCK;
+
     else {
         av_log(NULL, AV_LOG_ERROR, "Unknown value for %s: %s\n", opt, arg);
         exit(1);
