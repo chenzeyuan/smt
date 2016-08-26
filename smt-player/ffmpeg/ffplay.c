@@ -408,7 +408,7 @@ static int modify_index = 0;
 static char * modify_server;
 
 static VideoState *global_is[MAX_SCREEN_FLOWS];
-
+static int64_t last_switch_request = 0;
 
 #define FF_QUIT_EVENT    (SDL_USEREVENT + 2)
 
@@ -3730,6 +3730,11 @@ static void event_loop(VideoState *cur_stream[])
 #endif
                 break;
             case SDLK_PAGEUP:
+                if(av_gettime_relative() - last_switch_request <= 1000000 ) {
+                    last_switch_request = av_gettime_relative();
+                    break;
+                }
+                av_log(NULL, AV_LOG_WARNING, "receieve page up key\n");
                 if(layout) {
                     int show_number = 0;
                     int i = ((layout == 1) ? 1:0);
@@ -3750,8 +3755,16 @@ static void event_loop(VideoState *cur_stream[])
                      }  
                      main_screen = show_number;
                 } 
+                
+                last_switch_request = av_gettime_relative();
                 break;
             case SDLK_PAGEDOWN:
+                if(av_gettime_relative() - last_switch_request <= 1000000 ) {
+                    last_switch_request = av_gettime_relative();
+                    break;
+                }
+
+                av_log(NULL, AV_LOG_WARNING, "receieve page down key\n");
                 if(layout) {
                     int show_number = 0;
                     int i = ((layout == 1) ? 1:0);
@@ -3773,6 +3786,8 @@ static void event_loop(VideoState *cur_stream[])
                      }  
                      main_screen = show_number;
                 } 
+                
+                last_switch_request = av_gettime_relative();
                 break;
             case SDLK_LEFT:
                 incr = -10.0;
