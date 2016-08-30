@@ -397,6 +397,7 @@ static int64_t audio_callback_time;
 
 static AVPacket flush_pkt;
 
+static const char *server_addr;
 static int layout = 0;
 static int is_smt_sync = 0;
 static int port = 0;
@@ -414,6 +415,9 @@ static int64_t last_switch_request = 0;
 
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
+static void inform_server_delete(char * server_addr, char * stream) ;
+static void inform_server_add(char * server_addr, char * stream) ;
+
 
 
 static void SDL_SpeedSamplerReset(SDL_SpeedSampler *sampler)
@@ -1332,6 +1336,10 @@ static void do_all_exit(VideoState *is[])
 
     SDL_Quit();
     av_log(NULL, AV_LOG_QUIET, "%s", "");
+
+    if((nb_input_files == 0) && (server_addr != 0) && (strlen(server_addr) > 0)) {
+        inform_server_delete(server_addr, input_filename[0]);
+    }
     exit(0);
 }
 
@@ -3478,7 +3486,7 @@ static void seek_chapter(VideoState *is, int incr)
                                  AV_TIME_BASE_Q), 0, 0);
 }
 
-static void inform_server(char * server_addr, char * stream) 
+static void inform_server_delete(char * server_addr, char * stream) 
 {
     char * pch;
     char * address; 
@@ -3514,6 +3522,46 @@ static void inform_server(char * server_addr, char * stream)
 
     av_log(NULL, AV_LOG_WARNING, "[Modify] inform server address %s:%s command %s\n", address, port, buffer);
 }
+
+static void inform_server_add(char * server_addr, char * stream) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    char cpy[100];
+    struct sockaddr_in server;
+
+    int client_socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(client_socket_fd < 0)
+    {
+         perror("Create Socket Failed:");
+         return ;
+    }
+
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "add ");
+    strcpy(buffer+strlen(buffer), stream);
+    
+    if(sendto(client_socket_fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Modify] inform server address %s:%s command %s\n", address, port, buffer);
+}
+
 
 /* handle an event sent by the GUI */
 static void event_loop(VideoState *cur_stream[])
@@ -3991,7 +4039,7 @@ static void event_loop(VideoState *cur_stream[])
 
 
                 // inform the server to delete the 
-                inform_server(modify_server, stream);
+                inform_server_delete(modify_server, stream);
                 break;
             }
     
@@ -4209,9 +4257,12 @@ static const OptionDef options[] = {
     { "scodec", HAS_ARG | OPT_STRING | OPT_EXPERT, { &subtitle_codec_name }, "force subtitle decoder", "decoder_name" },
     { "vcodec", HAS_ARG | OPT_STRING | OPT_EXPERT, {    &video_codec_name }, "force video decoder",    "decoder_name" },
     { "autorotate", OPT_BOOL, { &autorotate }, "automatically rotate video", "" },
+
+    //added for smt arguments
     { "smtsync", OPT_BOOL, { &is_smt_sync}, "to make sync for smt" },    
     { "port", HAS_ARG, { .func_arg = opt_port }, "set listening port", "port" },
     { "layout", HAS_ARG, { .func_arg = opt_layout }, "set the layout of display mode", "display layout" },
+    { "server", OPT_STRING | HAS_ARG, { &server_addr }, "set server address", "server address" },
     { NULL, },
 };
 
@@ -4587,6 +4638,11 @@ int main(int argc, char **argv)
 
     av_init_packet(&flush_pkt);
     flush_pkt.data = (uint8_t *)&flush_pkt;
+
+    if((nb_input_files == 0) && (server_addr != 0) && (strlen(server_addr) > 0)) {
+        inform_server_add(server_addr, input_filename[0]);
+    }
+    
 
     for(int i = 0; i <= nb_input_files; i++) {
         begin_time_key[i] = (char*)malloc(strlen(input_filename[i])+1);
