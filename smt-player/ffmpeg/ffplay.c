@@ -397,7 +397,7 @@ static int64_t audio_callback_time;
 
 static AVPacket flush_pkt;
 
-static const char *server_addr;
+static char* server_addr;
 static int layout = 0;
 static int is_smt_sync = 0;
 static int port = 0;
@@ -3492,6 +3492,7 @@ static void inform_server_delete(char * server_addr, char * stream)
     char * address; 
     char * port;
     char buffer[100];
+    char cpy[100];
     struct sockaddr_in server;
 
     int client_socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -3501,7 +3502,8 @@ static void inform_server_delete(char * server_addr, char * stream)
          return ;
     }
     
-    pch = strtok (server_addr, ":");
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
     address = pch; 
     pch = strtok (NULL, ":");
     port = pch;
@@ -4040,6 +4042,7 @@ static void event_loop(VideoState *cur_stream[])
 
                 // inform the server to delete the 
                 inform_server_delete(modify_server, stream);
+
                 break;
             }
     
@@ -4438,7 +4441,7 @@ static int handle_command(char * command)
     else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
         int i;
         char * delete_server;
-        char * added_server;
+        static char * added_server;
         pch = strtok (NULL, " ");
         delete_server = pch;
         pch = strtok (NULL, " ");
@@ -4490,7 +4493,8 @@ static int handle_command(char * command)
                     i++;
                 }
             }
-            inform_server_add( added_server, added_address);
+            inform_server_add( added_server, added_address);            
+            strcpy(server_addr, added_server);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
