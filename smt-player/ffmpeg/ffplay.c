@@ -3986,6 +3986,7 @@ static void event_loop(VideoState *cur_stream[])
                 nb_input_files--;
 
                 refresh_video();
+                inform_server_delete(modify_server,input_filename[index]);
                 break;
             }
          // indicating "modify" command
@@ -4350,6 +4351,10 @@ static int handle_command(char * command)
 
     if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
         int i = 0;
+        char * delete_server;
+        pch = strtok (NULL, " ");
+        delete_server = pch;
+        modify_server = av_strdup(delete_server);
         pch = strtok (NULL, " ");
         delete_address = pch;
         if(delete_address == NULL) return -1; 
@@ -4381,11 +4386,15 @@ static int handle_command(char * command)
             return -1;
          }
     }
-    else if(strcmp (pch, "add") == 0) {  
+    else if(strcmp (pch, "add") == 0) { 
+        char * added_server;
+        pch = strtok (NULL, " ");
+        added_server = pch;
         pch = strtok (NULL, " ");
         added_address = pch;
+
         if(added_address != NULL) { 
-            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be ADDed\n", added_address);
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s <%s> required to be ADDed\n", added_address, added_server);
   
             if(nb_input_files == MAX_SCREEN_FLOWS) {
                 av_log(NULL, AV_LOG_ERROR, "[Result] ADDed failed due to maximum streams %d \n", nb_input_files);
@@ -4414,6 +4423,7 @@ static int handle_command(char * command)
                     i++;
                 }
             }
+            inform_server_add(added_server, added_address);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
@@ -4441,7 +4451,7 @@ static int handle_command(char * command)
     else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
         int i;
         char * delete_server;
-        static char * added_server;
+        char * added_server;
         pch = strtok (NULL, " ");
         delete_server = pch;
         pch = strtok (NULL, " ");
