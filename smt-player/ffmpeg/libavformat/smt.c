@@ -312,7 +312,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
 
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-            av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), dest_addr->sin_port);
+            av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
             ret = sendto (s->smt_fd[i], buf, len, 0,
                           (struct sockaddr *) &s->dest_addr[i],
                           s->dest_addr_len[i]);
@@ -833,7 +833,7 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
     SMTContext *s = h->priv_data;
     smt_status status;
     
-    av_log(NULL, AV_LOG_INFO, "\n %s \n",__FUNCTION__);
+    //av_log(NULL, AV_LOG_INFO, "\n %s \n",__FUNCTION__);
     if(!options)
         return AVERROR(EINVAL);
     AVDictionaryEntry *entry = av_dict_get(options, "smt_payload_size", NULL, AV_DICT_MATCH_CASE);

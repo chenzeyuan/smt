@@ -4437,15 +4437,18 @@ static int handle_command(char * command)
     // that means we should first add new stream then delete the orignal stream
     else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
         int i;
-        char * server_address;
+        char * delete_server;
+        char * added_server;
         pch = strtok (NULL, " ");
-        server_address = pch;
+        delete_server = pch;
         pch = strtok (NULL, " ");
         delete_address = pch;
         pch = strtok (NULL, " ");
+        added_server = pch;
+        pch = strtok (NULL, " ");
         added_address = pch;
         if(added_address != NULL && delete_address != NULL ) { 
-            av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be Modified to address %s from %s\n", delete_address, added_address, server_address);
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s <%s> required to be Modified to address %s <%s>\n", delete_address, delete_server, added_address, added_server);
 
             for( i = 0; i <= nb_input_files; i++) {
                 if(strcmp(delete_address, input_filename[i]) == 0) {
@@ -4463,7 +4466,7 @@ static int handle_command(char * command)
             }
             modify_index = i;
             is_modify = 1;
-            modify_server = av_strdup(server_address);
+            modify_server = av_strdup(delete_server);
               // using ',' as the delimiter
              pch = strtok (added_address, ",");
 
@@ -4487,6 +4490,7 @@ static int handle_command(char * command)
                     i++;
                 }
             }
+            inform_server_add( added_server, added_address);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
