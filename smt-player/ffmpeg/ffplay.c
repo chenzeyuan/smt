@@ -1475,8 +1475,8 @@ static int video_open(VideoState *is)
                 else{
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
                         input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
-                    is->width  = w *3/8;
-                    is->height = h *3/8;
+                    is->width  = input_file_resource[is->idx_screen].screen_width;
+                    is->height = input_file_resource[is->idx_screen].screen_heigth;
                 }
 
                 // to check if need to refresh, so as to show all of them.
@@ -3780,7 +3780,7 @@ static void event_loop(VideoState *cur_stream[])
 #endif
                 break;
             case SDLK_PAGEUP:
-                if(av_gettime_relative() - last_switch_request <= 1000000 ) {
+                if(av_gettime_relative() - last_switch_request <= 200000 ) {
                     last_switch_request = av_gettime_relative();
                     break;
                 }
@@ -3809,7 +3809,7 @@ static void event_loop(VideoState *cur_stream[])
                 last_switch_request = av_gettime_relative();
                 break;
             case SDLK_PAGEDOWN:
-                if(av_gettime_relative() - last_switch_request <= 1000000 ) {
+                if(av_gettime_relative() - last_switch_request <= 200000 ) {
                     last_switch_request = av_gettime_relative();
                     break;
                 }
