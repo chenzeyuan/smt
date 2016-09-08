@@ -42,6 +42,7 @@ unsigned int last_packet_counter[INPUT_URL_NUM_MAX];
 
 
 static int get_index_of_input_url(char* key) {
+
     if(NULL == key) return -1;
     int foundindex = -1;
     for(int i = 0; i < INPUT_URL_NUM_MAX; i++) {
@@ -973,8 +974,8 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         time_t time_zero_s = mktime(&today_zero_time);
                         int64_t time_zero_us = now_time_us - ((int64_t)(now_time_s - time_zero_s ))*1000*1000 - (now_time_us%(1000*1000));
 #if defined(__ANDROID__)
-                    if( 0 == smt_callback_entity.get_begin_time(h) && p->packet_id == 0 )  { 
-                        begin_time_value = time_zero_us / 1000 + (int64_t)p->timestamp; 
+                    if( 0 == smt_callback_entity.get_begin_time(h) && p->packet_id == 1 )  { 
+                        begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
                         smt_callback_entity.set_begin_time(h, begin_time_value);
                     }
 #else
