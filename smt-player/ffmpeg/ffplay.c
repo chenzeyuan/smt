@@ -406,7 +406,8 @@ static int socket_fd ;
 static struct sockaddr_in client_addr; 
 static int is_modify = 0;
 static int modify_index = 0;
-static char * modify_server;
+static char * modify_server = 0;
+
 
 static VideoState *global_is[MAX_SCREEN_FLOWS];
 static int64_t last_switch_request = 0;
@@ -3561,7 +3562,7 @@ static void inform_server_add(char * server_addr, char * stream)
         return;
     }
 
-    av_log(NULL, AV_LOG_WARNING, "[Modify] inform server address %s:%s command %s\n", address, port, buffer);
+    av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
 
@@ -3945,6 +3946,7 @@ static void event_loop(VideoState *cur_stream[])
         case SDL_USEREVENT:
             {
                 int index = event.user.code;
+                char * delete_server = event.user.data1;
                 int i = 0;
                 av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d required to be DELETEd\n", input_filename[index], index);
 
@@ -3986,7 +3988,7 @@ static void event_loop(VideoState *cur_stream[])
                 nb_input_files--;
 
                 refresh_video();
-                inform_server_delete(modify_server,input_filename[index]);
+                inform_server_delete(delete_server,input_filename[index]);
                 break;
             }
          // indicating "modify" command
@@ -4342,11 +4344,13 @@ static void init_windows_resource(void) {
         input_file_resource[i].screen_heigth= -1;
     }
 }
+
 static int handle_command(char * command)
 {
     char * pch;
     char * added_address; 
     char * delete_address;
+
     pch = strtok (command, " ");
 
     if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
@@ -4354,7 +4358,7 @@ static int handle_command(char * command)
         char * delete_server;
         pch = strtok (NULL, " ");
         delete_server = pch;
-        modify_server = av_strdup(delete_server);
+        char * modify_server = av_strdup(delete_server);
         pch = strtok (NULL, " ");
         delete_address = pch;
         if(delete_address == NULL) return -1; 
@@ -4374,7 +4378,8 @@ static int handle_command(char * command)
                 SDL_zero(e);
     
                 e.type = SDL_USEREVENT;
-                e.user.code = i;    
+                e.user.code = i;   
+                e.user.data1 = modify_server;
                 
                 SDL_PushEvent(&e);
                 break;
@@ -4533,6 +4538,28 @@ static int handle_command(char * command)
     return 1;
 }
 
+static int handle_commands(char * command)
+{
+    char * pcommand;
+    char ptmp[100];
+
+    av_log(NULL, AV_LOG_WARNING, "[Command RECV] %s\n", command);
+
+    // using ; to split each command.
+    pcommand = strtok(command, ";");
+
+    while(pcommand != NULL ) {
+        av_log(NULL, AV_LOG_WARNING, "[Command Handling] %s\n", pcommand);
+        strcpy(ptmp, pcommand);
+        handle_command(ptmp);   
+        av_usleep(500000);
+        command += strlen(pcommand) + 1;
+        pcommand = strtok(command, ";");
+    }
+      
+    return 1;
+}
+
 static void *listening_read_thread(void *arg)
 {
     while(1) 
@@ -4556,7 +4583,7 @@ static void *listening_read_thread(void *arg)
 
          av_log(NULL, AV_LOG_INFO, "[command] receive: [%s] from address %s\n", command, inet_ntoa(client_addr.sin_addr));
 
-         handle_command(command);
+         handle_commands(command);
 
     }
     return;
