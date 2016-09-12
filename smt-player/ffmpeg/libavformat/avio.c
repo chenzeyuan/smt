@@ -386,6 +386,19 @@ int64_t ffurl_set(URLContext *h, AVDictionary *options) //add for smt
     return h->prot->url_set(h, options);
 }
 
+int64_t ffurl_get(URLContext *h, AVDictionary **options) //add for smt
+
+{
+
+    if (!h->prot->url_get)
+
+        return AVERROR(ENOSYS);
+
+
+
+    return h->prot->url_get(h, options);
+
+}
 
 int64_t ffurl_seek(URLContext *h, int64_t pos, int whence)
 {

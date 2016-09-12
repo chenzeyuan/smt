@@ -806,6 +806,7 @@ int ffio_fdopen(AVIOContext **s, URLContext *h)
         return AVERROR(ENOMEM);
     }
     (*s)->set = ffurl_set;
+    (*s)->get = ffurl_get;
     (*s)->direct = h->flags & AVIO_FLAG_DIRECT;
     (*s)->seekable = h->is_streamed ? 0 : AVIO_SEEKABLE_NORMAL;
     (*s)->max_packet_size = max_packet_size;

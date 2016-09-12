@@ -866,6 +866,36 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
     return 0;
 }
 
+static int64_t smt_get(URLContext *h, AVDictionary **options)
+
+{
+
+    uint64_t play_tm = 110;
+
+    char s_play_tm[20] = {"\0"}; //max number is 18446744073709551615 for decimal number
+
+    /*
+
+        TBD
+
+        add get start playing time here !!
+
+        play_tm = ....
+
+    */
+
+    sprintf(s_play_tm, "%d", play_tm);
+
+    if(strlen(s_play_tm) > 0)
+
+            av_dict_set(&(*options), "smt_playing time", s_play_tm, AV_DICT_MATCH_CASE);
+
+    
+
+    return 0;
+
+}
+
 
 URLProtocol ff_smt_protocol = {
     .name                = "smt",
@@ -875,6 +905,7 @@ URLProtocol ff_smt_protocol = {
     .url_close           = smt_close,
     .url_seek            = smt_seek,
     .url_set             = smt_set,
+    .url_get             = smt_get,
     .url_get_file_handle = smt_get_file_handle,
     .priv_data_size      = sizeof(SMTContext),
     .priv_data_class     = &smt_class,
