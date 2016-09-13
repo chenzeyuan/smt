@@ -1692,13 +1692,34 @@ static double get_master_clock(VideoState *is)
             val = get_clock(&is->audclk);
             break;
         case AV_SYNC_SMT_CLOCK:
+        {
+            int64_t current_begin_time = 0;
+            if(!is || !is->ic || !is->ic->pb || !is->ic->pb->opaque) {
+                val = NAN;
+            } else {
+                AVDictionary *tmp = NULL;
+                is->ic->pb->get(is->ic->pb->opaque, &tmp);
+
+                AVDictionaryEntry *e = NULL;
+                e = av_dict_get(tmp, "begin_time",NULL, 0);
+                if(e && e->key && e->value) {
+                    current_begin_time = atoi(e->value);
+                    val = av_gettime()/1000000.0 - current_begin_time /1000.0;
+                }
+                else {
+                    val = NAN;
+                }
+            }
+            #if 0
             if( 0 == begin_time_value[is->idx_screen]) 
             {
                 val = NAN;
             } else {
                 val = av_gettime()/1000000.0 - begin_time_value[is->idx_screen]/1000.0;
             }
+            #endif
             break;
+        }
         default:
             val = get_clock(&is->extclk);
             break;

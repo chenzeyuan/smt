@@ -965,6 +965,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
 
                     { 
+                        int64_t cur_begin_time_value;
                         int64_t now_time_us =  av_gettime();
                         time_t  now_time_s = (time_t)(now_time_us/ (1000*1000));//time(NULL);
                         struct tm today_zero_time = *localtime(&now_time_s);
@@ -973,28 +974,25 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         today_zero_time.tm_sec  = 0;
                         time_t time_zero_s = mktime(&today_zero_time);
                         int64_t time_zero_us = now_time_us - ((int64_t)(now_time_s - time_zero_s ))*1000*1000 - (now_time_us%(1000*1000));
-#if defined(__ANDROID__)
+//#if defined(__ANDROID__)
                     if( 0 == smt_callback_entity.get_begin_time(h) && p->packet_id == 1 )  { 
-                        begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
-                        smt_callback_entity.set_begin_time(h, begin_time_value);
+                        cur_begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
+                        smt_callback_entity.set_begin_time(h, cur_begin_time_value);
                     }
-#else
-                        int index = get_index_of_input_url(h->filename);
-                        int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
+//#else
+                        //int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
                         int64_t todaytime = now_time_us - time_zero_us;
-                        int64_t delay = now_time_us - timestamp_64;
+                        int64_t delay = now_time_us - cur_begin_time_value * 1000;
                         av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
                                 h->filename, 
                                 now_time_us , 
-                                timestamp_64,
+                                cur_begin_time_value * 1000,
                                 delay,
                                 p->packet_id,
                                 p->packet_sequence_number,
                                 p->packet_counter );
-                        if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 1 )  { 
-                            begin_time_value[index] = timestamp_64 / 1000; 
-                        }
-#endif
+
+//#endif
                     }
 
 

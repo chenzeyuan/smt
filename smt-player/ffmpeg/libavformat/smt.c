@@ -83,6 +83,7 @@ typedef struct SMTContext {
     smt_receive_entity *receive;
     smt_send_entity *send;
     struct SMT4AvLogExt info_av_log_ext;
+    int64_t begin_time;
 } SMTContext;
 
 static unsigned int consumption_length = 0;
@@ -678,6 +679,7 @@ static int smt_open(URLContext *h, const char *uri, int flags)
      
     s->fifo_size *= MTU;
     s->fifo = NULL;
+    s->begin_time = 0;
     ret = pthread_mutex_init(&s->mutex, NULL);
     if (ret != 0) {
         av_log(h, AV_LOG_ERROR, "pthread_mutex_init failed : %s\n", strerror(ret));
@@ -866,34 +868,37 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
     return 0;
 }
 
+static int64_t smt_set_begin_time(URLContext *h, int64_t begin_time) {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
+    int64_t tmp = s->begin_time;
+    s->begin_time = begin_time;
+    return tmp;
+}
+
+static int64_t smt_get_begin_time(URLContext *h) {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
+    return s->begin_time;
+}
+
 static int64_t smt_get(URLContext *h, AVDictionary **options)
-
 {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
 
-    uint64_t play_tm = 110;
+    int64_t play_tm = s->begin_time;
 
-    char s_play_tm[20] = {"\0"}; //max number is 18446744073709551615 for decimal number
+    if(0 == play_tm)  return 0;
 
-    /*
+    char s_play_tm[50] = {"\0"}; //max number is 18446744073709551615 for decimal number
 
-        TBD
+    sprintf(s_play_tm, "%lld", play_tm);
 
-        add get start playing time here !!
-
-        play_tm = ....
-
-    */
-
-    sprintf(s_play_tm, "%d", play_tm);
-
-    if(strlen(s_play_tm) > 0)
-
-            av_dict_set(&(*options), "smt_playing time", s_play_tm, AV_DICT_MATCH_CASE);
-
-    
-
+    if(strlen(s_play_tm) > 0) {
+        av_dict_set(&(*options), "begin_time", s_play_tm, AV_DICT_MATCH_CASE);
+    }
     return 0;
-
 }
 
 
@@ -918,6 +923,8 @@ smt_callback smt_callback_entity = {
     .gfd_callback_fun   = smt_on_get_gfd,
     .id_callback_fun    = smt_on_get_id,
     .packet_send        = smt_on_packet_deliver,
+    .set_begin_time     = smt_set_begin_time,
+    .get_begin_time     = smt_get_begin_time,
 };
 
 

@@ -223,6 +223,8 @@ typedef struct callback {
     void (* gfd_callback_fun)(URLContext *h, smt_gfd *gfd);
     void (* id_callback_fun)(URLContext *h, smt_id *id);
     int  (* packet_send)(URLContext *h, unsigned char *buf, int len);
+    int64_t  (* set_begin_time)  (URLContext *h, int64_t begin_time);
+    int64_t  (* get_begin_time)  (URLContext *h);
 } smt_callback;
 
 typedef struct smt_receive_entity{
