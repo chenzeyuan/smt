@@ -84,6 +84,7 @@ typedef struct SMTContext {
     smt_send_entity *send;
     struct SMT4AvLogExt info_av_log_ext;
     int64_t begin_time;
+    unsigned int last_packet_counter;
 } SMTContext;
 
 static unsigned int consumption_length = 0;
@@ -313,7 +314,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
 
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-            av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
+            //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
             ret = sendto (s->smt_fd[i], buf, len, 0,
                           (struct sockaddr *) &s->dest_addr[i],
                           s->dest_addr_len[i]);
@@ -882,6 +883,19 @@ static int64_t smt_get_begin_time(URLContext *h) {
     return s->begin_time;
 }
 
+static int smt_set_last_packet_counter(URLContext *h, unsigned int counter) {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
+    s->last_packet_counter = counter;
+    return 0;
+}
+
+static unsigned int smt_get_last_packet_counter(URLContext *h) {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
+    return s->last_packet_counter;    
+}
+
 static int64_t smt_get(URLContext *h, AVDictionary **options)
 {
     if(!h || !h->priv_data) return 0;
@@ -925,13 +939,15 @@ smt_callback smt_callback_entity = {
     .packet_send        = smt_on_packet_deliver,
     .set_begin_time     = smt_set_begin_time,
     .get_begin_time     = smt_get_begin_time,
+    .set_last_packet_counter = smt_set_last_packet_counter,
+    .get_last_packet_counter = smt_get_last_packet_counter,
 };
 
 
 int smt_add_delivery_url(const char *uri)
 {
     char hostname[1024];
-    int port = 0, tmp, smt_fd = -1, bind_ret = -1;
+    int port = 0, smt_fd = -1;
     struct sockaddr_storage my_addr;
     socklen_t len;
     char *localaddr;

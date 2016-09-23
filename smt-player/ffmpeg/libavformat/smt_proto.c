@@ -35,28 +35,6 @@ int64_t diff_time = 0;
 //for ffplay
 #if defined(__ANDROID__)
 int64_t begin_time_value = 0;
-#else
-char*   begin_time_key[INPUT_URL_NUM_MAX];
-int64_t begin_time_value[INPUT_URL_NUM_MAX];
-unsigned int last_packet_counter[INPUT_URL_NUM_MAX];
-
-
-static int get_index_of_input_url(char* key) {
-
-    if(NULL == key) return -1;
-    int foundindex = -1;
-    for(int i = 0; i < INPUT_URL_NUM_MAX; i++) {
-        if(begin_time_key[i] == NULL) {
-            break;
-        } else {
-            if(0 == strcmp(begin_time_key[i], key)) {
-                foundindex = i;
-                break;
-            }
-        }
-    }
-    return foundindex;
-}
 #endif
 
 static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
@@ -428,19 +406,18 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
 #if !defined(__ANDROID__)
-                    int index = get_index_of_input_url(h->filename);
-                    if(-1 != index ) {
-                        if(last_packet_counter[index] + 1 == p->packet_counter || p->packet_counter == 0) {
-                        } else {
-                            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
-                                                            h->filename,
-                                                            p->packet_counter - last_packet_counter[index] -1,
-                                                            p->packet_counter,
-                                                            last_packet_counter[index]);
 
-                        }
-                        last_packet_counter[index] = p->packet_counter;
+                    if(smt_callback_entity.get_last_packet_counter(h) + 1 == p->packet_counter || p->packet_counter == 0) {
+                    } else {
+                        av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
+                                h->filename,
+                                p->packet_counter - smt_callback_entity.get_last_packet_counter(h) -1,
+                                p->packet_counter,
+                                smt_callback_entity.get_last_packet_counter(h));
+
                     }
+                    smt_callback_entity.set_last_packet_counter(h, p->packet_counter);
+
 
 #endif                    
                     recv->process_position += 16;

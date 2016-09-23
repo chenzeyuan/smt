@@ -68,15 +68,12 @@
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
 extern int64_t begin_time; 
-extern char* begin_time_key[];
-extern int64_t begin_time_value[];
 #define MAX_QUEUE_SIZE (15 * 1024 * 1024)
 #define MIN_FRAMES 25
 #define EXTERNAL_CLOCK_MIN_FRAMES 2
 #define EXTERNAL_CLOCK_MAX_FRAMES 10
 #define MAX_SCREEN_FLOWS  8
 #define SUB_SCREEN_BORDER_SIZE  50
-int media_status[MAX_SCREEN_FLOWS];//0:   1:initialed 2:started
 
 /* Minimum SDL audio buffer size, in samples. */
 #define SDL_AUDIO_MIN_BUFFER_SIZE 512
@@ -1703,21 +1700,13 @@ static double get_master_clock(VideoState *is)
                 AVDictionaryEntry *e = NULL;
                 e = av_dict_get(tmp, "begin_time",NULL, 0);
                 if(e && e->key && e->value) {
-                    current_begin_time = atoi(e->value);
+                    current_begin_time = strtol(e->value, NULL, 10);
                     val = av_gettime()/1000000.0 - current_begin_time /1000.0;
                 }
                 else {
                     val = NAN;
                 }
             }
-            #if 0
-            if( 0 == begin_time_value[is->idx_screen]) 
-            {
-                val = NAN;
-            } else {
-                val = av_gettime()/1000000.0 - begin_time_value[is->idx_screen]/1000.0;
-            }
-            #endif
             break;
         }
         default:
@@ -3464,15 +3453,7 @@ static void refresh_loop_wait_event(VideoState *is[], SDL_Event *event) {
         remaining_time = REFRESH_RATE;
         for(int i = 0 ; i <= nb_input_files; i++) { 
             if(is[i] == NULL) continue;
-            if(0 != begin_time_value[i]  && media_status[i] != 2) {
-                int64_t time_now = av_gettime();
-                if(time_now > begin_time_value[i] * 1000) {
-                    toggle_pause(is[i]);
-                    media_status[i] = 2;
-                }
-            }
-
-            if (2 == media_status[i]  && is[i]->show_mode != SHOW_MODE_NONE
+            if (is[i]->show_mode != SHOW_MODE_NONE
                     && (!is[i]->paused || is[i]->force_refresh)) {
                 video_refresh(is[i], &remaining_time);            
             }
@@ -3593,6 +3574,7 @@ static void event_loop(VideoState *cur_stream[])
     SDL_Event event;
     double incr, pos, frac;
     
+#if 0
     if(is_smt_sync) {
         for(int i = 0; i <= nb_input_files; i++) {
             if( i == 0 && 1 == layout) {
@@ -3601,6 +3583,7 @@ static void event_loop(VideoState *cur_stream[])
                 toggle_pause(cur_stream[i]);
         }
     }
+#endif
 
     for (;;) {
         double x;
@@ -3996,9 +3979,7 @@ static void event_loop(VideoState *cur_stream[])
                     renderer[i] = renderer[i+1];
                     global_is[i]->idx_screen--;
                     memcpy(&input_file_resource[i], &input_file_resource[i+1], sizeof(ResourceParam));
-                    begin_time_key[i] = begin_time_key[i+1];
-                    begin_time_value[i] = begin_time_value[i+1];
-                    media_status[i] = media_status[i+1];
+                    //begin_time_value[i] = begin_time_value[i+1];
                 }
 
                 // finally set the last slot to null
@@ -4048,9 +4029,7 @@ static void event_loop(VideoState *cur_stream[])
                 renderer[index] = renderer[nb_input_files];
                 global_is[index]->idx_screen = tmp;
                 memcpy(&input_file_resource[index], &input_file_resource[nb_input_files], sizeof(ResourceParam));
-                begin_time_key[index] = begin_time_key[nb_input_files];
-                begin_time_value[index] = begin_time_value[nb_input_files];
-                media_status[index] = media_status[nb_input_files];
+                //begin_time_value[index] = begin_time_value[nb_input_files];
               
 
                 // finally set the last slot to null
@@ -4452,13 +4431,6 @@ static int handle_command(char * command)
             inform_server_add(added_server, added_address);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
-            begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
-            if(is_smt_sync) {
-                media_status[nb_input_files+1] = 1;
-            }
-            else {
-                media_status[nb_input_files+1] = 2;
-            }
             global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
             if (!global_is[nb_input_files+1]) {
                 av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
@@ -4533,13 +4505,6 @@ static int handle_command(char * command)
             strcpy(server_addr, added_server);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
-            begin_time_key[nb_input_files+1] = input_filename[nb_input_files+1];
-            if(is_smt_sync) {
-                media_status[nb_input_files+1] = 1;
-            }
-            else {
-                media_status[nb_input_files+1] = 2;
-            }
             global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
             if (!global_is[nb_input_files+1]) {
                 av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
@@ -4711,17 +4676,6 @@ int main(int argc, char **argv)
     
 
     for(int i = 0; i <= nb_input_files; i++) {
-        begin_time_key[i] = (char*)malloc(strlen(input_filename[i])+1);
-        strcpy(begin_time_key[i], input_filename[i]);
-        if(is_smt_sync) {
-            if(layout == 1 && i == 0)
-                media_status[i] = 2;
-            else
-                media_status[i] = 1;
-        }
-        else {
-            media_status[i] = 2;
-        }
         global_is[i] = stream_open(input_filename[i], file_iformat);
         if (!global_is[i]) {
             av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
