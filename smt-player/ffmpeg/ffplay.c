@@ -4408,8 +4408,8 @@ static int handle_command(char * command)
             // using ',' as the delimiter
              pch = strtok (added_address, ",");
 
+            int i = 0;
             if(pch != NULL) {
-                int i = 0;
                 while (pch != NULL)
                 {
                     char *tail;
@@ -4428,6 +4428,17 @@ static int handle_command(char * command)
                     i++;
                 }
             }
+
+            for( i = 0; i <= nb_input_files; i++) {
+                if(strcmp(added_address, input_filename[i]) == 0) {
+                    break;
+                }
+            }
+            if( i <= nb_input_files ) {
+                av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already\n", added_address);
+                return -1;
+            } 
+            
             inform_server_add(added_server, added_address);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
