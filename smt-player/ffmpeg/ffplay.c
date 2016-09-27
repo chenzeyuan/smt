@@ -4513,7 +4513,7 @@ static int handle_command(char * command)
                 }
             }
             inform_server_add( added_server, added_address);            
-            strcpy(server_addr, added_server);
+            server_addr = av_strdup(added_server);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
@@ -4526,6 +4526,19 @@ static int handle_command(char * command)
         }
         else
             return -1;
+    }    
+    else if (strcmp (pch, "delay") == 0 ) {        
+        pch = strtok (NULL, " ");
+
+        SDL_Event e;
+        SDL_zero(e);
+
+        e.type = SDL_USEREVENT;
+        e.user.code = i;   
+        e.user.data1 = modify_server;
+        
+        SDL_PushEvent(&e);
+        break;
     }
     else {        
       av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
