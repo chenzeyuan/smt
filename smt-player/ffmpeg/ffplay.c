@@ -397,6 +397,7 @@ static AVPacket flush_pkt;
 static char* server_addr;
 static int layout = 0;
 static int is_smt_sync = 0;
+static double smt_sync_adjust_value = 0;
 static int port = 0;
 static pthread_t listening_tid;
 static int socket_fd ;
@@ -413,8 +414,8 @@ static int64_t last_switch_request = 0;
 
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
-static void inform_server_delete(char * server_addr, char * stream) ;
-static void inform_server_add(char * server_addr, char * stream) ;
+static void inform_server_delete(char * server_addr, const char * stream) ;
+static void inform_server_add(char * server_addr, const char * stream) ;
 
 
 
@@ -426,6 +427,7 @@ static void SDL_SpeedSamplerReset(SDL_SpeedSampler *sampler)
 
 static float SDL_SpeedSamplerAdd(SDL_SpeedSampler *sampler, int enable_log, const char *log_tag)
 {
+    float samples_per_second;
     Uint64 current = av_gettime();
     sampler->samples[sampler->next_index] = current;
     sampler->next_index++;
@@ -440,7 +442,7 @@ static float SDL_SpeedSamplerAdd(SDL_SpeedSampler *sampler, int enable_log, cons
     if (sampler->count < 2)
         return 0;
 
-    float samples_per_second = 1000.0f * 1000 * (sampler->count - 1) / (current - sampler->samples[sampler->first_index]);
+    samples_per_second = 1000.0f * 1000 * (sampler->count - 1) / (current - sampler->samples[sampler->first_index]);
 
     if (enable_log && (sampler->last_log_time + 1000 < current || sampler->last_log_time > current)) {
         sampler->last_log_time = current;
@@ -1394,7 +1396,7 @@ static void switch_sub_screen(VideoState *is)
     is->height = default_height / 4;
 }
 
-static void refresh_video() {
+static void refresh_video(void) {
     int w,h;
 
     if(nb_input_files == -1)  return;
@@ -1411,10 +1413,11 @@ static void refresh_video() {
     SDL_ShowWindow( window[main_screen]);                
     SDL_RaiseWindow( window[main_screen] );
     for(int i = 0 ; i <= nb_input_files; i++) {  
+        int j;
         if (i == main_screen) {
             continue;
         }
-        int j = (i < main_screen) ? 0 : 1;
+        j = (i < main_screen) ? 0 : 1;
       
         if(input_file_resource[i].screen_posx == -1) {
             SDL_SetWindowPosition(window[i], w * 3/4 - 2*SUB_SCREEN_BORDER_SIZE, (h/4 ) * (i - j ) + i * h/16);
@@ -1478,15 +1481,17 @@ static int video_open(VideoState *is)
                 }
 
                 // to check if need to refresh, so as to show all of them.
-                int show = 1;
-                for(int i = 1 ; i <= nb_input_files; i++) {
-                    if(!window[i]) {
-                        show = 0;
-                        break;
-                     }
-                }
-                if(show){
-                    is->muted = 0;
+                {
+                    int show = 1;
+                    for(int i = 1 ; i <= nb_input_files; i++) {
+                        if(!window[i]) {
+                            show = 0;
+                            break;
+                        }
+                    }
+                    if(show){
+                        is->muted = 0;
+                    }
                 }
             }
         }
@@ -1494,6 +1499,7 @@ static int video_open(VideoState *is)
              
             if(is_modify && is->idx_screen == nb_input_files) {
                 // do not show it right now
+                SDL_Event e;
                 window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, SDL_WINDOW_HIDDEN);
                 is->width  = w;
                 is->height = h;
@@ -1504,7 +1510,6 @@ static int video_open(VideoState *is)
                     renderer[is->idx_screen] = SDL_CreateRenderer(window[is->idx_screen], -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
                 }
 
-                SDL_Event e;
                 SDL_zero(e);
     
                 e.type = SDL_USEREVENT + 1;
@@ -1536,15 +1541,17 @@ static int video_open(VideoState *is)
 
 
                 // to check if need to refresh, so as to show all of them.
-                int show = 1;
-                for(int i = 0 ; i <= nb_input_files; i++) {
-                    if(!window[i]){
-                        show = 0;
-                        break;
+                {
+                    int show = 1;
+                    for(int i = 0 ; i <= nb_input_files; i++) {
+                        if(!window[i]){
+                            show = 0;
+                            break;
+                        }
                     }
-                }
-                if(show) {
-                    refresh_video();
+                    if(show) {
+                        refresh_video();
+                    }
                 }
             }
             else {
@@ -1561,15 +1568,17 @@ static int video_open(VideoState *is)
                 }
 
                 // to check if need to refresh, so as to show all of them.
-                int show = 1;
-                for(int i = 0 ; i <= nb_input_files; i++) {
-                    if(!window[i]) {
-                        show = 0;
-                        break;
-                     }
-                }
-                if(show) {
-                    refresh_video();
+                {
+                    int show = 1;
+                    for(int i = 0 ; i <= nb_input_files; i++) {
+                        if(!window[i]) {
+                            show = 0;
+                            break;
+                        }
+                    }
+                    if(show) {
+                        refresh_video();
+                    }
                 }
             }
         }
@@ -1695,13 +1704,13 @@ static double get_master_clock(VideoState *is)
                 val = NAN;
             } else {
                 AVDictionary *tmp = NULL;
+                AVDictionaryEntry *e = NULL;
                 is->ic->pb->get(is->ic->pb->opaque, &tmp);
 
-                AVDictionaryEntry *e = NULL;
                 e = av_dict_get(tmp, "begin_time",NULL, 0);
                 if(e && e->key && e->value) {
                     current_begin_time = strtol(e->value, NULL, 10);
-                    val = av_gettime()/1000000.0 - current_begin_time /1000.0;
+                    val = av_gettime()/1000000.0 - current_begin_time /1000.0 + smt_sync_adjust_value;
                 }
                 else {
                     val = NAN;
@@ -1956,15 +1965,17 @@ display:
         double av_diff;
         int64_t time_diff;
         double  sample_rate;
+        int frame_number;
 
         cur_time = av_gettime_relative();
-        int frame_number = is->video_st ? is->video_st->codec->frame_number : 0 ;
+        frame_number = is->video_st ? is->video_st->codec->frame_number : 0 ;
         if (!last_frame[is->idx_screen] || 
             ((cur_time - last_time[is->idx_screen]) >= 30000  &&
              (frame_number - last_frame[is->idx_screen] > 5 ))){
             aqsize = 0;
             vqsize = 0;
             sqsize = 0;
+            sqsize = sqsize ;
             if (is->audio_st)
                 aqsize = is->audioq.size;
             if (is->video_st)
@@ -2981,7 +2992,7 @@ static int read_thread(void *arg)
     AVDictionary **opts;
     int orig_nb_streams;
     SDL_mutex *wait_mutex = SDL_CreateMutex();
-    int scan_all_pmts_set = 0;
+    //int scan_all_pmts_set = 0;
     int64_t pkt_ts;
 
     if (!wait_mutex) {
@@ -3462,6 +3473,7 @@ static void refresh_loop_wait_event(VideoState *is[], SDL_Event *event) {
     }
 }
 
+#if 0
 static void seek_chapter(VideoState *is, int incr)
 {
     int64_t pos = get_master_clock(is) * AV_TIME_BASE;
@@ -3488,8 +3500,10 @@ static void seek_chapter(VideoState *is, int incr)
     stream_seek(is, av_rescale_q(is->ic->chapters[i]->start, is->ic->chapters[i]->time_base,
                                  AV_TIME_BASE_Q), 0, 0);
 }
+#endif
 
-static void inform_server_delete(char * server_addr, char * stream) 
+
+static void inform_server_delete(char * server_addr, const char * stream) 
 {
     char * pch;
     char * address; 
@@ -3528,7 +3542,7 @@ static void inform_server_delete(char * server_addr, char * stream)
     av_log(NULL, AV_LOG_WARNING, "[Modify] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
-static void inform_server_add(char * server_addr, char * stream) 
+static void inform_server_add(char * server_addr, const char * stream) 
 {
     char * pch;
     char * address; 
@@ -3567,12 +3581,17 @@ static void inform_server_add(char * server_addr, char * stream)
     av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
+static void update_smt_sync_adjust_value(double incr) {
+    smt_sync_adjust_value += incr;
+    return;
+}
 
 /* handle an event sent by the GUI */
 static void event_loop(VideoState *cur_stream[])
 {
     SDL_Event event;
     double incr, pos, frac;
+    int j;
     
 #if 0
     if(is_smt_sync) {
@@ -3627,7 +3646,7 @@ static void event_loop(VideoState *cur_stream[])
                 SDL_RaiseWindow( window[main_screen] );
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
-                    int j = (i < main_screen) ? 0 : 1;
+                    //int j = (i < main_screen) ? 0 : 1;
                     //SDL_SetWindowPosition(window[i], default_width* 3/4 - 2*SUB_SCREEN_BORDER_SIZE, ( default_height/4 ) * (i-j) + i * default_height/16);
                     SDL_ShowWindow( window[i]);                
                     SDL_RaiseWindow( window[i] );
@@ -3684,7 +3703,7 @@ static void event_loop(VideoState *cur_stream[])
 
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
-                    int j = (i < main_screen) ? 0 : 1;                    
+                    j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
                     SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) +4* SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
@@ -3703,7 +3722,7 @@ static void event_loop(VideoState *cur_stream[])
 
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
-                    int j = (i < main_screen) ? 0 : 1;                    
+                    j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
                     SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
@@ -3722,7 +3741,7 @@ static void event_loop(VideoState *cur_stream[])
 
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
-                    int j = (i < main_screen) ? 0 : 1;                    
+                    j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
                     SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
@@ -3742,7 +3761,7 @@ static void event_loop(VideoState *cur_stream[])
 
                 for(int i = 0 ; i <= nb_input_files; i++) {  
                     if (i == main_screen) continue;   
-                    int j = (i < main_screen) ? 0 : 1;                    
+                    j = (i < main_screen) ? 0 : 1;                    
                     switch_sub_screen(cur_stream[i]);
                     SDL_SetWindowPosition(window[i], default_width *6/4 - 2*SUB_SCREEN_BORDER_SIZE, (default_height /2 + SUB_SCREEN_BORDER_SIZE) * (i - j) + 4*SUB_SCREEN_BORDER_SIZE);
                     SDL_ShowWindow( window[i]);                
@@ -3856,6 +3875,11 @@ static void event_loop(VideoState *cur_stream[])
             case SDLK_DOWN:
                 incr = -60.0;
             do_seek:
+                    if (av_sync_type ==  AV_SYNC_SMT_CLOCK) {
+                        update_smt_sync_adjust_value(incr / 100 );
+                        break;
+                    }
+
                     if (seek_by_bytes) {
                         pos = -1;
                         if (pos < 0 && cur_stream[main_screen]->video_stream >= 0)
@@ -3905,7 +3929,7 @@ static void event_loop(VideoState *cur_stream[])
             break;
                 if (seek_by_bytes || cur_stream[main_screen]->ic->duration <= 0) {
                     uint64_t size =  avio_size(cur_stream[main_screen]->ic->pb);
-                    stream_seek(cur_stream, size*x/cur_stream[main_screen]->width, 0, 1);
+                    stream_seek(cur_stream[main_screen], size*x/cur_stream[main_screen]->width, 0, 1);
                 } else {
                     int64_t ts;
                     int ns, hh, mm, ss;
@@ -4168,7 +4192,7 @@ static void opt_input_file(void *optctx, const char *filename)
     nb_input_files++;
     
     // using ',' as the delimiter
-     pch = strtok (filename, ",");
+     pch = strtok ((char*) filename, ",");
 
     if(pch != NULL) {
         int i = 0;
@@ -4350,15 +4374,16 @@ static int handle_command(char * command)
     char * pch;
     char * added_address; 
     char * delete_address;
+    char * modify_server = NULL;
+    char * delete_server = NULL;
+    int i = 0;
 
     pch = strtok (command, " ");
 
     if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
-        int i = 0;
-        char * delete_server;
         pch = strtok (NULL, " ");
         delete_server = pch;
-        char * modify_server = av_strdup(delete_server);
+        modify_server = av_strdup(delete_server);
         pch = strtok (NULL, " ");
         delete_address = pch;
         if(delete_address == NULL) return -1; 
@@ -4408,7 +4433,6 @@ static int handle_command(char * command)
             // using ',' as the delimiter
              pch = strtok (added_address, ",");
 
-            int i = 0;
             if(pch != NULL) {
                 while (pch != NULL)
                 {
@@ -4528,6 +4552,7 @@ static int handle_command(char * command)
             return -1;
     }    
     else if (strcmp (pch, "delay") == 0 ) {        
+#if 0
         pch = strtok (NULL, " ");
 
         SDL_Event e;
@@ -4539,6 +4564,7 @@ static int handle_command(char * command)
         
         SDL_PushEvent(&e);
         break;
+#endif
     }
     else {        
       av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
@@ -4580,7 +4606,7 @@ static void *listening_read_thread(void *arg)
          memset(command, 0, 1024); 
          if(recvfrom(socket_fd, command, 1024,0,(struct sockaddr*)&client_addr, &client_addr_length) == -1) 
          { 
-            return;
+            return NULL;
          } 
 
          /* Remove trailing newline, if there. */
@@ -4596,7 +4622,7 @@ static void *listening_read_thread(void *arg)
          handle_commands(command);
 
     }
-    return;
+    return NULL;
 
 }
 
