@@ -4551,21 +4551,6 @@ static int handle_command(char * command)
         else
             return -1;
     }    
-    else if (strcmp (pch, "delay") == 0 ) {        
-#if 0
-        pch = strtok (NULL, " ");
-
-        SDL_Event e;
-        SDL_zero(e);
-
-        e.type = SDL_USEREVENT;
-        e.user.code = i;   
-        e.user.data1 = modify_server;
-        
-        SDL_PushEvent(&e);
-        break;
-#endif
-    }
     else {        
       av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
       return -1;
