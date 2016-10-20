@@ -406,6 +406,7 @@ static int is_modify = 0;
 static int modify_index = 0;
 static char * modify_server = 0;
 
+static int layout3_show = 1;
 
 static VideoState *global_is[MAX_SCREEN_FLOWS];
 static int64_t last_switch_request = 0;
@@ -1467,6 +1468,31 @@ static int video_open(VideoState *is)
                 }
 
             }
+
+            else if (layout == 3) {
+                if(main_screen == is->idx_screen) {                    
+                    flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
+                }
+                else {   
+                    flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
+                }
+                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == -1)) {
+                    window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+                else if (input_file_resource[is->idx_screen].screen_posx != -1) {
+                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
+                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    is->width  = input_file_resource[is->idx_screen].screen_width;
+                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                }
+                else {
+                    window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
+                    is->width  = w;
+                    is->height = h;
+                }
+            }
             else {
                 if(input_file_resource[is->idx_screen].screen_posx == -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", 1250, 1200, w*3/8 , h*3/8, flags);
@@ -1850,9 +1876,9 @@ static void video_refresh(void *opaque, double *remaining_time)
     if (!is->paused && get_master_sync_type(is) == AV_SYNC_EXTERNAL_CLOCK && is->realtime)
         check_external_clock_speed(is);
 
-    if (!display_disable && is->show_mode != SHOW_MODE_VIDEO && is->audio_st) {
+    if (layout == 3 || !display_disable && is->show_mode != SHOW_MODE_VIDEO && is->audio_st) {
         time = av_gettime_relative() / 1000000.0;
-        if (is->force_refresh || is->last_vis_time + rdftspeed < time) {
+        if (is->force_refresh || is->last_vis_time + rdftspeed < time || layout == 3) {
             video_display(is);
             is->last_vis_time = time;
         }
@@ -3773,9 +3799,26 @@ static void event_loop(VideoState *cur_stream[])
             case SDLK_KP_DIVIDE:
                 update_volume(cur_stream[main_screen], -1, SDL_VOLUME_STEP);
                 break;
-            //case SDLK_s: // S: Step to next frame
-           //     step_to_next_frame(cur_stream[main_screen]);
-           //     break;
+            // x: to show when layout = 3
+            case SDLK_z: {
+                if(layout != 3)
+                    break;
+                 if(av_gettime_relative() - last_switch_request <= 200000 ) {
+                    last_switch_request = av_gettime_relative();
+                    break;
+                }
+                if(layout3_show == 0) {        
+                    SDL_ShowWindow( window[1]);  
+                    SDL_RaiseWindow( window[1] );
+                    layout3_show = 1;
+                }
+                else {
+                    SDL_RaiseWindow( window[0] );
+                    layout3_show = 0;
+                }
+                last_switch_request = av_gettime_relative();
+                break;
+            }
             case SDLK_a:
                 stream_cycle_channel(cur_stream[main_screen], AVMEDIA_TYPE_AUDIO);
                 break;
@@ -3790,6 +3833,7 @@ static void event_loop(VideoState *cur_stream[])
             case SDLK_t:
                 stream_cycle_channel(cur_stream[main_screen], AVMEDIA_TYPE_SUBTITLE);
                 break;
+              #if 0
             case SDLK_w:
 #if CONFIG_AVFILTER
                 if (cur_stream[main_screen]->show_mode == SHOW_MODE_VIDEO && cur_stream[main_screen]->vfilter_idx < nb_vfilters - 1) {
@@ -3803,6 +3847,7 @@ static void event_loop(VideoState *cur_stream[])
                 toggle_audio_display(cur_stream[main_screen]);
 #endif
                 break;
+#endif
             case SDLK_PAGEUP:
                 if(av_gettime_relative() - last_switch_request <= 200000 ) {
                     last_switch_request = av_gettime_relative();
@@ -4117,7 +4162,7 @@ static int opt_port(void *optctx, const char *opt, const char *arg)
 
 static int opt_layout(void *optctx, const char *opt, const char *arg)
 {
-    layout = parse_number_or_die(opt, arg, OPT_INT64, 0, 2);
+    layout = parse_number_or_die(opt, arg, OPT_INT64, 0, 3);
     return 0;
 }
 
