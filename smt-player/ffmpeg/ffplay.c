@@ -1448,8 +1448,8 @@ static int video_open(VideoState *is)
             window_title = is->filename;
 
         if(layout) {
-            if ((main_screen == is->idx_screen) && (layout == 1)) {
-                //flags |= SDL_WINDOW_FULLSCREEN;
+            if (((main_screen == is->idx_screen) && (layout == 1))
+                || layout == 3) {
                 if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == -1)) {
                     window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
                     is->width  = w;
@@ -1467,31 +1467,6 @@ static int video_open(VideoState *is)
                     is->height = h;
                 }
 
-            }
-
-            else if (layout == 3) {
-                if(main_screen == is->idx_screen) {                    
-                    flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
-                }
-                else {   
-                    flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
-                }
-                if((screen_posX == -1) && (input_file_resource[is->idx_screen].screen_posx == -1)) {
-                    window[is->idx_screen] = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w , h, flags);
-                    is->width  = w;
-                    is->height = h;
-                }
-                else if (input_file_resource[is->idx_screen].screen_posx != -1) {
-                    window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
-                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
-                    is->width  = input_file_resource[is->idx_screen].screen_width;
-                    is->height = input_file_resource[is->idx_screen].screen_heigth;
-                }
-                else {
-                    window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
-                    is->width  = w;
-                    is->height = h;
-                }
             }
             else {
                 if(input_file_resource[is->idx_screen].screen_posx == -1) {
@@ -3680,6 +3655,10 @@ static void event_loop(VideoState *cur_stream[])
 
                 break;                
             case SDLK_0:
+                if(layout == 4) {
+                    SDL_ShowWindow( window[0]);                
+                    SDL_RaiseWindow( window[0] );
+                    }
                 if(layout) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );                
@@ -3688,6 +3667,12 @@ static void event_loop(VideoState *cur_stream[])
                 SDL_RaiseWindow( window[0] );
                 break;
             case SDLK_1:
+                if(layout == 4) {
+                    SDL_ShowWindow( window[0]);                
+                    SDL_RaiseWindow( window[0] );
+                    SDL_ShowWindow( window[1]);                
+                    SDL_RaiseWindow( window[1] );
+                }
                 if(layout) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
@@ -3696,7 +3681,13 @@ static void event_loop(VideoState *cur_stream[])
                 SDL_ShowWindow( window[1]);                
                 SDL_RaiseWindow( window[1] );
                 break;
-            case SDLK_2:      
+            case SDLK_2:    
+                if(layout == 4) {
+                    SDL_ShowWindow( window[0]);                
+                    SDL_RaiseWindow( window[0] );
+                    SDL_ShowWindow( window[2]);                
+                    SDL_RaiseWindow( window[2] );
+                }
                 if(layout) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
@@ -3705,7 +3696,13 @@ static void event_loop(VideoState *cur_stream[])
                 SDL_ShowWindow( window[2]);                
                 SDL_RaiseWindow( window[2] );
                 break; 
-            case SDLK_3:    
+            case SDLK_3: 
+                if(layout == 4) {
+                    SDL_ShowWindow( window[0]);                
+                    SDL_RaiseWindow( window[0] );
+                    SDL_ShowWindow( window[3]);                
+                    SDL_RaiseWindow( window[3] );
+                }
                 if(layout) break;
                 SDL_ShowWindow( window[main_screen]);                
                 SDL_RaiseWindow( window[main_screen] );
@@ -3799,7 +3796,7 @@ static void event_loop(VideoState *cur_stream[])
             case SDLK_KP_DIVIDE:
                 update_volume(cur_stream[main_screen], -1, SDL_VOLUME_STEP);
                 break;
-            // x: to show when layout = 3
+            // z: to show when layout = 3
             case SDLK_z: {
                 if(layout != 3)
                     break;
@@ -4162,7 +4159,7 @@ static int opt_port(void *optctx, const char *opt, const char *arg)
 
 static int opt_layout(void *optctx, const char *opt, const char *arg)
 {
-    layout = parse_number_or_die(opt, arg, OPT_INT64, 0, 3);
+    layout = parse_number_or_die(opt, arg, OPT_INT64, 0, 4);
     return 0;
 }
 
