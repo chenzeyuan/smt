@@ -765,8 +765,15 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
             ret = av_fifo_generic_write(s->cache, buf, size, NULL);
             pthread_mutex_unlock(&s->mutex);
             return ret;
-        }else if(ret == SMT_STATUS_OK)
+        }else if(ret == SMT_STATUS_OK){
+            //
+            //static int counter = 0;
+            //if(counter % 2 == 0) 
+            //    smt_pack_signal(h);
+            //counter++;
+            //
             return size;
+        }
     }
     pthread_mutex_lock(&s->mutex);
     space = av_fifo_space(s->cache);

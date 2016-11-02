@@ -553,7 +553,7 @@ OBJS-$(CONFIG_TLS_SECURETRANSPORT_PROTOCOL) += tls_securetransport.o tls.o
 OBJS-$(CONFIG_UDP_PROTOCOL)              += udp.o
 OBJS-$(CONFIG_UDPLITE_PROTOCOL)          += udp.o
 OBJS-$(CONFIG_UNIX_PROTOCOL)             += unix.o
-OBJS-$(CONFIG_SMT_PROTOCOL)              += smt.o smt_proto.o
+OBJS-$(CONFIG_SMT_PROTOCOL)              += smt.o smt_proto.o smt_signal.o smt_getfile.o
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 

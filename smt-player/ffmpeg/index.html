@@ -1,0 +1,57 @@
+<html>
+    <head>
+    <title>AD </title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <link href="http://172.16.5.19/common/smt.css" rel="stylesheet" type="text/css" />
+    <script type="text/javascript" src="http://172.16.5.19/common/smt.js"></script>
+    <script type="text/javascript">
+        function setImageSelected(whichSelected){
+            if(Number(whichSelected) == 0) {
+                console.log("select 0");
+                document.getElementById("Image1").style.display="block";
+                document.getElementById("Image2").style.display="none";
+            } else {
+                console.log("select 1");
+                document.getElementById("Image1").style.display="none";
+                document.getElementById("Image2").style.display="block";
+            }
+
+        }
+        function setSelectedShareUrl(whichSelected){
+            if(Number(whichSelected) == 0) {
+                setShareUrl("http://172.16.5.19/AD_cn/samsung_camera.html");
+            } else {
+                setShareUrl("http://172.16.5.19/AD_cn/medicine.html");
+            }
+            
+        }
+        function load() {
+            loadSwitchDiv();
+            loadShareScreenDiv();
+            onSetSelected = function(whichSelected) {
+                setMeidaSelected("Audio1", whichSelected);
+                setMeidaSelected("Video1", whichSelected);
+                setTimeout(setImageSelected, 1600,whichSelected);
+                setSelectedShareUrl(whichSelected);
+            };
+            InitSelected();
+            InitMediaSelected("Video1");
+            InitMediaSelected("Audio1");
+            setShareIP("192.168.0.108");
+        };
+    </script>
+</head>
+
+<body style="background:#000" onload=load()>
+        <div id="Area1" style="position:absolute; " z-index="0">
+            <video id="Video1" style="position:absolute; left:0px; top:0px; width:100%; height:100%"/>
+            <audio id="Audio1" />
+        </div>
+        <div id="Area3" style="position:absolute; left:1580px; top:20px;width:240px; height:240px">
+            <img id="Image1"  style="position:absolute; left:0px; top:0px; width:240px; height:240px" onclick="openwindow()"/>
+            <img id="Image2"  style="position:absolute; left:0px; top:0px; width:240px; height:240px" onclick="openwindow()"/>
+        </div>
+</body>
+</html>
+
+

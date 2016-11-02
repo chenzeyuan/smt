@@ -1,0 +1,17 @@
+<CI ci_base_timestamp="2016-04-07T18:27:05.821+08:00" timestamp="2016-04-07T18:27:13.821+08:00" version="409">
+    <view begin="2016-04-07T18:27:05.821+08:00" end="indefinite" id="View1" style="position:absolute; width:1920px; height:1080px" viewRole="multiple">
+	        <area begin="2016-04-07T18:27:05.821+08:00" end="indefinite" id="divL1" refDiv="Area1" style="position:absolute; left:0px; top:0px; width:1920px; height:1080px" />
+
+            <area begin="2016-04-07T18:27:05.821+08:00" end="indefinite" id="divL3" plungeOut="dynamic" refDiv="Area3" style="position:absolute; left:1960px; top:20px; width:240px; height:240px" />
+    </view>
+    <MediaSync begin="2016-04-07T18:27:05.821+08:00" refId="Video1" type="select"> 
+	   <option mediaSrc="asset_video?type=video&amp;proto=mmtp" />
+       <option mediaSrc="mmt://172.16.5.19/AD_cn/video/AD_cn_video_mpu_$(sequence_num).mp4?type=video&amp;proto=http&amp;sequence_num=0-59" />
+    </MediaSync>
+    <MediaSync begin="2016-04-07T18:27:05.821+08:00" refId="Audio1" type="select"> 
+	   <option mediaSrc="asset_audio?type=audio&amp;proto=mmtp" />
+       <option mediaSrc="mmt://172.16.5.19/AD_cn/audio/AD_cn_audio_mpu_$(sequence_num).mp4?type=video&amp;proto=http&amp;sequence_num=0-59" />
+    </MediaSync>
+    <MediaSync begin="2016-04-07T18:27:05.821+08:00" mediaSrc="http://172.16.5.19/AD_cn/samsung_camera.jpg" refId="Image1" />
+    <MediaSync begin="2016-04-07T18:27:05.821+08:00" mediaSrc="http://172.16.5.19/AD_cn/medicine.jpg" refId="Image2" />
+</CI>

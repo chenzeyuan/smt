@@ -1,0 +1,11 @@
+<Signaling>
+	<MPT>
+		<asset asset_id="asset0" media_type="audio" asset_type="avc1" packet_id="0"></asset>
+		<asset asset_id="asset1" media_type="video" asset_type="ac-3" packet_id="1"></asset>
+	</MPT>
+
+	<MPIT>
+		<PI PI_type="ci" PI_content_name="ci.xml" PI_content_path="/home/frank/work/smt/smt/smt-player/ffmpeg/"></PI>
+		<PI PI_type="html" PI_content_name="index.html" PI_content_path="/home/frank/work/smt/smt/smt-player/ffmpeg/"></PI>
+	</MPIT>
+</Signaling>

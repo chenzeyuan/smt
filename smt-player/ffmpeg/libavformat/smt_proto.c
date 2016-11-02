@@ -1,4 +1,5 @@
 #include "smt_proto.h"
+#include "smt_signal.h"
 #include "avformat.h"
 #include "libavutil/avassert.h"
 #include "libavutil/time.h"
@@ -33,9 +34,64 @@ extern smt_callback     smt_callback_entity;
 int64_t begin_time = 0;
 int64_t diff_time = 0;
 //for ffplay
+
+char*   begin_time_key[INPUT_URL_NUM_MAX];
+int64_t begin_time_value[INPUT_URL_NUM_MAX ];
+
 #if defined(__ANDROID__)
 int64_t begin_time_value = 0;
 #endif
+/*for send*/
+static int				asset;
+static int				pkt_counter = 0;
+static int 				mpu_seq[MAX_ASSET_NUMBER] = {0};
+static int              pkt_seq[MAX_ASSET_NUMBER] = {0};
+static int				moof_index;
+static int				sample_index;
+int g_id_old=-1;
+int g_mpu_old=0;
+enum {
+INVALID_MPU  = -1,
+INVALID_DATA = -2,
+OUT_OF_RANGE = -3,
+INVALID_MFU  = -4,
+INVALID_SAMPLE_NUMBER = -5,
+OUT_OF_MEMORY= -6,
+INVALID_SIGNALLING_MESSAGE  = -7,
+};
+
+//add for test
+static void print_all(smt_payload_sig * sig){
+        printf("--------------------------lalalalalal----------------------------------------------------\n");
+        printf("f_i=%d\nres=%u\nH=%d\nA=%d\nfrag_counter=%u\nMSG_length=%d\ndata_len=%u\n",
+                sig->f_i,sig->res,sig->H,sig->A,sig->frag_counter,sig->MSG_length,sig->data_len);
+        int i = 0;
+        printf("data=\n");
+        for(i = 0; i < sig->MSG_length; ++i){
+            printf("%u",sig->data[i]);
+        }
+        printf("\n");
+        printf("--------------------------lalalallala----------------------------------------------------\n");
+        fflush(stdout);
+}
+//add for test
+
+static int get_index_of_input_url(char* key) {
+    if(NULL == key) return -1;
+    int foundindex = -1;
+    for(int i = 0; i < INPUT_URL_NUM_MAX; i++) {
+        if(begin_time_key[i] == NULL) {
+            break;
+        } else {
+            if(0 == strcmp(begin_time_key[i], key)) {
+                foundindex = i;
+                break;
+            }
+        }
+    }
+    return foundindex;
+}
+
 
 static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
 {
@@ -188,6 +244,13 @@ static smt_status smt_parse_sig_payload(URLContext *h, smt_receive_entity *recv,
             recv->need_more_data = SMT_GFD_PAYLOAD_HEAD_LENGTH - size;
             return SMT_STATUS_NEED_MORE_DATA;
         }
+        // printf("~~~~~~~sig~~~~~~~~~~\n");
+        // int i = 0;
+        // for(i = 0; i < 4; ++i){
+        //     printf("%u\n",buffer[i]);
+
+        // }
+        // printf("~~~~~~~sig~~~~~~~~~~\n");
         switch((buffer[0] >> 6) & 0x03){
             case 0x00:
                 payload->f_i = complete_data;
@@ -220,12 +283,13 @@ static smt_status smt_parse_sig_payload(URLContext *h, smt_receive_entity *recv,
         while(offset < size){
                 if(payload->A){
                     if(payload->H){
-                        payload->MSG_length = (buffer[2] << 8) | buffer[3];
-						recv->process_position += 2;
-                        offset += 2;
+                        payload->MSG_length = (buffer[2] << 8) | buffer[3] |buffer[4]|buffer[5];
+                        recv->process_position += 4;
+                        offset += 4;
                     }else{
-                        payload->MSG_length = buffer[2];
-						recv->process_position += 1;
+                        payload->MSG_length =(buffer[2] << 8) | buffer[3];
+                        recv->process_position += 2;
+                        offset += 2;
                         offset += 1;
                     }
                     data_len += payload->MSG_length;
@@ -240,10 +304,23 @@ static smt_status smt_parse_sig_payload(URLContext *h, smt_receive_entity *recv,
 					recv->process_position += data_len;
                     offset += data_len;
                 }else{
+                     //add for test
+                    if(payload->H){
+                        payload->MSG_length = (buffer[2] << 8) | buffer[3] |buffer[4]|buffer[5];
+                        recv->process_position += 4;
+                        offset += 4;
+                    }else{
+                        payload->MSG_length =(buffer[2] << 8) | buffer[3];
+                        recv->process_position += 2;
+                        offset += 2;
+                    }
+                    //add for test
                     payload->data_len = size - offset;
                     payload->data = (unsigned char*)av_mallocz(size - offset);
-                    memset(payload->data, buffer+offset, payload->data_len);
-					recv->process_position += payload->data_len;
+                    memset(payload->data, 0, payload->data_len);
+                    memcpy(payload->data, buffer+offset, payload->data_len);
+
+                    recv->process_position += payload->data_len;
                     offset += payload->data_len;
                 }
             }
@@ -402,6 +479,19 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
+                    int index = get_index_of_input_url(h->filename);
+                    if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
+                        int64_t now_time_us =  av_gettime();
+                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
+                        struct tm today_zero_time = *localtime(&now_time_s);
+                        today_zero_time.tm_hour = 0;
+                        today_zero_time.tm_min  = 0;
+                        today_zero_time.tm_sec  = 0;
+                        time_t time_zero_s = mktime(&today_zero_time);
+                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
+                        begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
+                    }
+
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
@@ -462,6 +552,9 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     }case sig_payload:{
                         smt_payload_sig *sig = (smt_payload_sig *)payload;
                         ret = smt_parse_sig_payload(h, recv, &sig);
+                        //begin:add for test
+                        //print_all(sig);
+                        //end:add for test
                         break;
                     }case repair_symbol_payload:{
                         smt_payload_id *id = (smt_payload_id *)payload;
@@ -1016,12 +1109,133 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
 }
 
+long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length) {
+    if(!p_signalling_message) return INVALID_SIGNALLING_MESSAGE;
+    if(!data) return INVALID_DATA;
+    if(p_signalling_message->signal_seekpoint+ length > p_signalling_message->length) {
+        printf("fatal error!!!! memcpy signalling message error -3\n"); 
+        return OUT_OF_RANGE;
+    }
+    //printf("seekpoint= %d\n",p_signalling_message->signal_seekpoint);
+    memcpy(p_signalling_message->signal_buf + p_signalling_message->signal_seekpoint, data, length);
+    p_signalling_message->signal_seekpoint += length;
+    return length;
+}
+
+signalling_message_buf_t *p_signalling_message_buf = NULL;
+static smt_status smt_add_sig_packet(URLContext *h,smt_receive_entity *recv, smt_packet *p)
+{
+    smt_status ret = SMT_STATUS_OK;     
+    int signal_size = 0;
+    long receive_time;
+	
+    int asset_id = p->packet_id;
+    smt_payload_sig *sig_payload = (smt_payload_sig *)&(p->payload);//
+
+    unsigned char *payload_data = sig_payload->data; //
+    if(sig_payload->f_i == complete_data)
+    {
+    }
+    if(sig_payload->f_i == first_fragment)
+    {
+        if(p_signalling_message_buf) {
+            if(p_signalling_message_buf->signal_buf){
+                free(p_signalling_message_buf->signal_buf);
+                p_signalling_message_buf->signal_buf = NULL;
+            }
+            free(p_signalling_message_buf);
+            p_signalling_message_buf = NULL;
+        }
+        pa_message_t pa_message;
+        read_pa_message_header(&pa_message,(const char*)payload_data);
+        p_signalling_message_buf = (signalling_message_buf_t*)av_mallocz(sizeof(signalling_message_buf_t));
+        if(p_signalling_message_buf == NULL){
+            puts("Memory allocation failed.");
+            exit(EXIT_FAILURE);
+        }
+        memset(p_signalling_message_buf, 0, sizeof(signalling_message_buf_t));
+        //add by drj
+        p_signalling_message_buf->length = pa_message.length+PAh_BUFF_LEN;
+        //add by drj
+        p_signalling_message_buf->signal_buf = (unsigned char*)av_mallocz((pa_message.length+PAh_BUFF_LEN)*sizeof(unsigned char));
+        signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
+    }
+    if(sig_payload->f_i == middle_fragment)
+    {
+        signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
+    }
+    if(sig_payload->f_i == last_fragment)
+    {
+        signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
+        smt_sig * sig = av_mallocz(sizeof(smt_sig));
+        read_pa_message(sig,(const char*)p_signalling_message_buf->signal_buf);
+        if(p_signalling_message_buf) {
+            if(p_signalling_message_buf->signal_buf) {
+                free(p_signalling_message_buf->signal_buf);
+                p_signalling_message_buf->signal_buf = NULL;
+            }
+            free(p_signalling_message_buf); 
+            p_signalling_message_buf = NULL;
+        }
+        //printf("id = %u version = %u, length = %u numberoftables = %u\n",sig->message_id,sig->version,sig->length,sig->number_of_tables);
+        if(smt_callback_entity.sig_callback_fun)
+            smt_callback_entity.sig_callback_fun(h,sig);
+    } 
+    // if (pa_message.mp_table.MP_table_asset[0].asset_descriptors_length != 0)
+    // {
+    //     edit_list_t edit_list_id;
+    //     int id_new=0;
+    //     int mpu_new=0;
+    //     id_change(edit_list_id,id_new,mpu_new);
+    // }
+    return ret; //
+}
+// -----------------function edit_list-----------------
+int info_change(int id_new, int mpu_new)
+{
+    printf("id_old=%d id_new=%d\n",g_id_old,id_new);
+    printf("mpu_old=%d,mpu_new=%d\n",g_mpu_old,mpu_new);
+    return  0; //
+}
+
+int id_change(edit_list_t edit_list_id,int id_new,int mpu_new)
+ {
+//     MUR_descriptors_t mur_descriptor;
+//     char* mur_buf=(char *)malloc(pa_message.mp_table.MP_table_asset[0].asset_descriptors_length*sizeof(char));
+//     memcpy(mur_buf,pa_message.mp_table.MP_table_asset[0].asset_descriptors_byte,pa_message.mp_table.MP_table_asset[0].asset_descriptors_length);
+//     read_MUR_descriptors(&mur_descriptor,mur_buf);
+//     int i;
+//     for(i=0;i<EDIT_LIST_NUM;i++)
+//     {
+//         id_new=mur_descriptor.edit_list[i].edit_list_id;
+//         mpu_new=mur_descriptor.edit_list[i].mpu_sequence_number;
+//     }
+//         if (g_id_old==-1)
+//     {
+//         g_id_old=id_new;
+//     }
+//     if (id_new==g_id_old)
+//     {
+//         ;
+//     }
+//     else
+//     {
+//         info_change(id_new,mpu_new);
+//     }
+//     g_id_old=id_new;
+//     g_mpu_old=mpu_new;
+//     free(mur_buf);
+//     mur_buf=NULL;
+    return 0;
+}
+// -----------------function edit_list-----------------
 static smt_status smt_add_packet(URLContext *h, smt_receive_entity *recv, smt_packet *p)
 {
     smt_status ret = SMT_STATUS_OK;
     int pkt_id = p->packet_id;
     smt_payload_type tp = p->type;
-    if(pkt_id >= MAX_ASSET_NUMBER){
+    if(pkt_id >= MAX_ASSET_NUMBER && pkt_id != Signal_PACKET_ID){
+        printf("error!\n");
         av_log(h, AV_LOG_ERROR, "current asset number is %d, which is bigger than MAX_ASSET_NUMBER!\n", pkt_id);
         recv->packet_parser_status = SMT_STATUS_INIT;
         return SMT_STATUS_NOT_SUPPORT;
@@ -1034,6 +1248,8 @@ static smt_status smt_add_packet(URLContext *h, smt_receive_entity *recv, smt_pa
         case gfd_payload:
             break;
         case sig_payload:
+            ret = smt_add_sig_packet(h, recv, p);
+            break;
         case repair_symbol_payload:
             break;
     }
@@ -1365,7 +1581,10 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
 	return SMT_STATUS_OK;
 }
 
-
-
+smt_status smt_pack_signal(URLContext *h)
+{
+    generate_and_send_signal(h);
+    return SMT_STATUS_OK;
+}
 
 

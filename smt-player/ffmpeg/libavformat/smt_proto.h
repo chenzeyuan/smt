@@ -1,8 +1,14 @@
 #ifndef SMT_PROTO_H
 #define SMT_PROTO_H
 
+#include "avformat.h"
+#include "libavutil/opt.h"
+#include "libavutil/log.h"
+#include "libavutil/fifo.h"
+#include "network.h"
 #include <stdbool.h>
 #include "url.h"
+#include "smt_signal.h"
 
 
 #define MTU 1452     //ip 20 + udp 8 + mtp 1452 = 1480      1500
@@ -25,6 +31,7 @@
 #define FIXED_UDP_LEN
 
 
+#define EDIT_LIST_NUM 2
 
 typedef enum fec_type{
     no_fec = 0,
@@ -201,9 +208,19 @@ typedef struct mpu {
     struct mpu      *next;
 } smt_mpu;
 
+// typedef struct sig {
+//     unsigned char*	sample_data;
+// 	unsigned int	sample_length;
+// } smt_sig;
 typedef struct sig {
-    unsigned char*	sample_data;
-	unsigned int	sample_length;
+    u_int16_t message_id;
+    u_int8_t version;
+    u_int32_t length;// new version
+    u_int8_t number_of_tables;
+    table_header_t *table_header;
+    pa_table_t pa_table ;
+    mp_table_t mp_table;
+    mpi_table_t mpi_table;
 } smt_sig;
 
 typedef struct gfd {
@@ -254,7 +271,10 @@ typedef struct smt_send_entity{
 smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size);
 void smt_release_mpu(URLContext *h, smt_mpu *mpu);
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length);
-
+smt_status smt_pack_signal(URLContext *h);
+long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length);
+int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
+int info_change(int id_new,int mpu_new);
 
 #endif
 
