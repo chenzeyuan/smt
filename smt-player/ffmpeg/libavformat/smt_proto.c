@@ -60,6 +60,11 @@ OUT_OF_MEMORY= -6,
 INVALID_SIGNALLING_MESSAGE  = -7,
 };
 
+char* ext_inform_server = 0;
+SMTContext * smtContext;
+URLContext * smtH;
+
+
 //add for test
 static void print_all(smt_payload_sig * sig){
         printf("--------------------------lalalalalal----------------------------------------------------\n");

@@ -51,6 +51,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <libavformat/smt_proto.h>
 
 #if CONFIG_AVFILTER
 # include "libavfilter/avfilter.h"
@@ -416,6 +417,7 @@ static int64_t last_switch_request = 0;
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
 static void inform_server_delete(char * server_addr, const char * stream) ;
+static void informs_server_delete(char * server_addr, int fd) ;
 static void inform_server_add(char * server_addr, const char * stream) ;
 
 
@@ -3503,6 +3505,38 @@ static void seek_chapter(VideoState *is, int incr)
 }
 #endif
 
+static void informs_server_delete(char * server_addr, int fd) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    char cpy[100];
+    struct sockaddr_in server;
+
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "delete ");
+    strcpy(buffer+strlen(buffer), "SOURCE");
+    
+    if(sendto(fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Delete] inform server address %s:%s command %s\n", address, port, buffer);
+}
+
 
 static void inform_server_delete(char * server_addr, const char * stream) 
 {
@@ -4020,6 +4054,9 @@ static void event_loop(VideoState *cur_stream[])
                 int i = 0;
                 av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d required to be DELETEd\n", input_filename[index], index);
 
+                // NAT punching cannot send by this session.
+                informs_server_delete(delete_server, smtContext->smt_fd[index]);
+
                 // first to hide the window to prevent the picture flutter 
                 SDL_HideWindow(window[index]);
 
@@ -4056,7 +4093,9 @@ static void event_loop(VideoState *cur_stream[])
                 nb_input_files--;
 
                 refresh_video();
-                inform_server_delete(delete_server,input_filename[index]);
+
+                // NAT punching cannot send by this session.
+                //inform_server_delete(delete_server,input_filename[index]);
                 break;
             }
          // indicating "modify" command
@@ -4504,9 +4543,13 @@ static int handle_command(char * command)
                 av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already\n", added_address);
                 return -1;
             } 
+
+            // do not send request from here.
+            // for NAT punching.
             
-            inform_server_add(added_server, added_address);
+            //inform_server_add(added_server, added_address);
             input_filename[nb_input_files+1] = av_strdup(added_address);
+            ext_inform_server = av_strdup(added_server);
             
             global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
             if (!global_is[nb_input_files+1]) {

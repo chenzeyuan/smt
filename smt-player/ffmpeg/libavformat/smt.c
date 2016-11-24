@@ -46,56 +46,42 @@
 #define SMT_NO_AUDIO 0
 #define SMT_NO_VIDEO 0
 
-#define SMT_MAX_DELIVERY_NUM    10
-
-typedef struct SMT4AvLogExt {
-    int     send_counter;
-    int64_t start_time;
-    int64_t len_sum;
-} SMT4AvLogExt;
-
-typedef struct SMTContext {
-    const AVClass *class;
-    int smt_fd[SMT_MAX_DELIVERY_NUM];
-    int smt_fd_size;
-    int buffer_size;
-    int pkt_size;
-    int is_multicast[SMT_MAX_DELIVERY_NUM];
-    int is_broadcast;
-    int local_port;
-    int reuse_socket;
-    char *localaddr;
-    int is_connected;
-    char *sources;
-    struct sockaddr_storage dest_addr[SMT_MAX_DELIVERY_NUM];
-    int dest_addr_len[SMT_MAX_DELIVERY_NUM];
-    struct sockaddr_storage local_addr_storage[SMT_MAX_DELIVERY_NUM];
-
-    int fifo_size;
-    AVFifoBuffer *fifo, *head, *cache;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    pthread_t mpu_generate_thread;
-    bool generate_thread_run;
-    bool hflag;
-    int stream_index;
-    int audio_head_available, video_head_available;
-    smt_receive_entity *receive;
-    smt_send_entity *send;
-    struct SMT4AvLogExt info_av_log_ext;
-    int64_t begin_time;
-    unsigned int last_packet_counter;
-} SMTContext;
-
 static unsigned int consumption_length = 0;
-
-
-static SMTContext * smtContext;
-static URLContext * smtH;
 
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
 
+static void inform_server_add(char * server_addr, int fd) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    char cpy[100];
+    struct sockaddr_in server;
+
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "add ");
+    strcpy(buffer+strlen(buffer), "SOURCE");
+    
+    if(sendto(fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
+}
 
 static void smt_on_get_mpu(URLContext *h, smt_mpu *mpu)
 {
@@ -675,6 +661,11 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     smtContext = s;
     smtH = h;
 
+    if (ext_inform_server) {
+        inform_server_add(ext_inform_server, smt_fd);
+        ext_inform_server = 0;
+    }
+
     s->send = NULL;
     s->receive = NULL;
      
@@ -793,6 +784,7 @@ static int smt_close(URLContext *h)
     time_t t = time(NULL);
     struct tm *tp = localtime(&t);
     av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
+
     for(i = 0; i < s->smt_fd_size; i++) {
         if (s->is_multicast[i]) 
             smt_leave_multicast_group(s->smt_fd[i], (struct sockaddr *)&s->dest_addr[i],(struct sockaddr *)&s->local_addr_storage[i]);
@@ -977,6 +969,7 @@ int smt_add_delivery_url(const char *uri)
 
     smtContext->smt_fd[smtContext->smt_fd_size] = smt_fd;
     smtContext->smt_fd_size++;
+
     return 1;
 }
 
@@ -995,11 +988,11 @@ int smt_del_delivery_url(const char *uri)
     for(i = 1; i < smtContext->smt_fd_size; i++)
     {    
         struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
-        av_log(NULL, AV_LOG_INFO, "try to del %s with %s \n", uri, inet_ntoa(dest_addr->sin_addr));
+        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s \n", uri, inet_ntoa(dest_addr->sin_addr));
         if(!strstr(uri, inet_ntoa(dest_addr->sin_addr)))
             continue;
         
-        av_log(NULL, AV_LOG_INFO, "found try to del %s \n", inet_ntoa(dest_addr->sin_addr));
+        av_log(NULL, AV_LOG_WARNING, "found try to del %s \n", inet_ntoa(dest_addr->sin_addr));
         if (smtContext->is_multicast[i]) 
             smt_leave_multicast_group(smtContext->smt_fd[i], (struct sockaddr *)&smtContext->dest_addr[i],(struct sockaddr *)&smtContext->local_addr_storage[i]);
         closesocket(smtContext->smt_fd[i]);

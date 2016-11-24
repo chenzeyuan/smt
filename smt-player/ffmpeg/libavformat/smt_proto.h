@@ -24,6 +24,7 @@
 #define SMT_SIG_PAYLOAD_HEAD_LENGTH 2
 #define SMT_ID_PAYLOAD_HEAD_LENGTH 13
 #define SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH 8
+#define SMT_MAX_DELIVERY_NUM    10
 
 #define MEDIA_TRACK_ID_OFFSET 1
 #define BUFFER_TIME 1000
@@ -268,6 +269,47 @@ typedef struct smt_send_entity{
     int              sample_index;
 } smt_send_entity;
 
+typedef struct SMT4AvLogExt {
+    int     send_counter;
+    int64_t start_time;
+    int64_t len_sum;
+} SMT4AvLogExt;
+
+
+typedef struct SMTContext {
+    const AVClass *class;
+    int smt_fd[SMT_MAX_DELIVERY_NUM];
+    int smt_fd_size;
+    int buffer_size;
+    int pkt_size;
+    int is_multicast[SMT_MAX_DELIVERY_NUM];
+    int is_broadcast;
+    int local_port;
+    int reuse_socket;
+    char *localaddr;
+    int is_connected;
+    char *sources;
+    struct sockaddr_storage dest_addr[SMT_MAX_DELIVERY_NUM];
+    int dest_addr_len[SMT_MAX_DELIVERY_NUM];
+    struct sockaddr_storage local_addr_storage[SMT_MAX_DELIVERY_NUM];
+
+    int fifo_size;
+    AVFifoBuffer *fifo, *head, *cache;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    pthread_t mpu_generate_thread;
+    bool generate_thread_run;
+    bool hflag;
+    int stream_index;
+    int audio_head_available, video_head_available;
+    smt_receive_entity *receive;
+    smt_send_entity *send;
+    struct SMT4AvLogExt info_av_log_ext;
+    int64_t begin_time;
+    unsigned int last_packet_counter;
+} SMTContext;
+
+
 smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size);
 void smt_release_mpu(URLContext *h, smt_mpu *mpu);
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length);
@@ -275,6 +317,10 @@ smt_status smt_pack_signal(URLContext *h);
 long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length);
 int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
 int info_change(int id_new,int mpu_new);
+extern char* ext_inform_server;
+extern SMTContext * smtContext;
+extern URLContext * smtH;
+
 
 #endif
 
