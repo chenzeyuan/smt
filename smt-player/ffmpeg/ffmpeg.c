@@ -166,7 +166,7 @@ static void free_input_threads(void);
 #endif
 
 static pthread_t listening_tid;
-static int server_socket_fd ;
+extern int server_socket_fd ;
 extern int listening_port;  
 
 struct sockaddr_in client_addr; 

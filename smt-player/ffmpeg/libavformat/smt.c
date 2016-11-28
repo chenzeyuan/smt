@@ -50,6 +50,8 @@ static unsigned int consumption_length = 0;
 
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
+int server_socket_fd = 0;
+
 
 static void inform_server_add(char * server_addr, int fd) 
 {
@@ -301,7 +303,11 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
             //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
-            ret = sendto (s->smt_fd[i], buf, len, 0,
+
+
+             // TODO: liminghao
+            //ret = sendto (s->smt_fd[i], buf, len, 0,
+            ret = sendto (server_socket_fd, buf, len, 0,
                           (struct sockaddr *) &s->dest_addr[i],
                           s->dest_addr_len[i]);
         } else {
