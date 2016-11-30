@@ -34,6 +34,7 @@
 #include "libavutil/time.h"
 #include "network.h"
 #include "url.h"
+#include "libavutil/avassert.h"
 #include "smt_proto.h"
 
 #include <pthread.h>
@@ -47,6 +48,7 @@
 #define SMT_NO_VIDEO 0
 
 #define SMT_MAX_DELIVERY_NUM    10
+#define SMT_MAX_PACKED_NUM      2
 
 typedef struct SMT4AvLogExt {
     int     send_counter;
@@ -83,7 +85,9 @@ typedef struct SMTContext {
     smt_receive_entity *receive;
     smt_send_entity *send;
     struct SMT4AvLogExt info_av_log_ext;
-    int64_t begin_time;
+    int64_t begin_time[SMT_MAX_PACKED_NUM];//0:audio, 1:video
+    int64_t mpu_sequence_number[SMT_MAX_PACKED_NUM];//0:audio, 1:video
+    int64_t mpu_lost_counter[SMT_MAX_PACKED_NUM];//0:audio, 1:video
     unsigned int last_packet_counter;
 } SMTContext;
 
@@ -97,9 +101,25 @@ int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
 
 
-static void smt_on_get_mpu(URLContext *h, smt_mpu *mpu)
+static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t count) {
+    if(!h || !h->priv_data) return 0;
+    assert(packet_id < SMT_MAX_PACKED_NUM);
+    SMTContext *s = h->priv_data;
+    av_log(h, AV_LOG_ERROR, "\n %d  mpu lost, packet_id=%d\n", count, packet_id);
+    int64_t tmp = s->mpu_lost_counter[packet_id];
+    s->mpu_lost_counter[packet_id] += count;
+    return tmp;
+}
+
+static void smt_on_get_mpu(URLContext *h, smt_mpu *mpu, unsigned short packet_id, int64_t sequence_number)
 {
     SMTContext *s = h->priv_data;
+    if(s->mpu_sequence_number[packet_id] >= 0 && s->mpu_sequence_number[packet_id] + 1 != sequence_number) {
+        av_assert0(sequence_number > s->mpu_sequence_number[packet_id] + 1);
+        smt_on_mpu_lost(h, packet_id, sequence_number - s->mpu_sequence_number[packet_id] - 1); 
+    }
+    s->mpu_sequence_number[packet_id] = sequence_number;
+
     int free_space_in_fifo;
     //if(!mpu->asset)
         //return;
@@ -680,7 +700,10 @@ static int smt_open(URLContext *h, const char *uri, int flags)
      
     s->fifo_size *= MTU;
     s->fifo = NULL;
-    s->begin_time = 0;
+    memset(s->begin_time, 0, SMT_MAX_PACKED_NUM * sizeof(int64_t));
+    memset(s->mpu_lost_counter, 0, SMT_MAX_PACKED_NUM * sizeof(int64_t));
+    memset(s->mpu_sequence_number, 0xFF, SMT_MAX_PACKED_NUM * sizeof(int64_t));
+
     ret = pthread_mutex_init(&s->mutex, NULL);
     if (ret != 0) {
         av_log(h, AV_LOG_ERROR, "pthread_mutex_init failed : %s\n", strerror(ret));
@@ -876,18 +899,20 @@ static int64_t smt_set(URLContext *h, AVDictionary *options)
     return 0;
 }
 
-static int64_t smt_set_begin_time(URLContext *h, int64_t begin_time) {
+static int64_t smt_set_begin_time(URLContext *h, unsigned short packet_id, int64_t begin_time) {
     if(!h || !h->priv_data) return 0;
+    assert(packet_id < SMT_MAX_PACKED_NUM);
     SMTContext *s = h->priv_data;
     int64_t tmp = s->begin_time;
-    s->begin_time = begin_time;
+    s->begin_time[packet_id] = begin_time;
     return tmp;
 }
 
-static int64_t smt_get_begin_time(URLContext *h) {
+static int64_t smt_get_begin_time(URLContext *h, unsigned short packet_id) {
     if(!h || !h->priv_data) return 0;
+    assert(packet_id < SMT_MAX_PACKED_NUM);
     SMTContext *s = h->priv_data;
-    return s->begin_time;
+    return s->begin_time[packet_id];
 }
 
 static int smt_set_last_packet_counter(URLContext *h, unsigned int counter) {
@@ -903,21 +928,44 @@ static unsigned int smt_get_last_packet_counter(URLContext *h) {
     return s->last_packet_counter;    
 }
 
+#define MAX_STRING_LEN_FOR_DECIMAL_NUMBER 50
+#define MAX_LEN_FOR_DICTIONARY_KEY        50
 static int64_t smt_get(URLContext *h, AVDictionary **options)
 {
+    SMTContext *s = NULL;
+    int i = 0;
+    int64_t value = 0;
+    char    s_value[MAX_STRING_LEN_FOR_DECIMAL_NUMBER] ={0};//max number is 18446744073709551615 for decimal number
+    char    s_key[MAX_LEN_FOR_DICTIONARY_KEY]={0};
+    
     if(!h || !h->priv_data) return 0;
-    SMTContext *s = h->priv_data;
+    s = h->priv_data;
 
-    int64_t play_tm = s->begin_time;
+    for(i = 0; i < SMT_MAX_PACKED_NUM; i++) {
+        /*--------------begin time------------------*/
+        memset(s_key, 0, MAX_LEN_FOR_DICTIONARY_KEY *  sizeof(char));
+        sprintf(s_key, "begin_time[%d]", i);
+        value = s->begin_time[i];
 
-    if(0 == play_tm)  return 0;
+        if(0 != value)  {
+            memset(s_value, 0, MAX_STRING_LEN_FOR_DECIMAL_NUMBER * sizeof(char));
+            sprintf(s_value, "%lld", value);
+            if(strlen(s_value) > 0) {
+                av_dict_set(&(*options), s_key, s_value, AV_DICT_MATCH_CASE);
+            }
+        }
+        /*--------------mpu lost------------------*/
+        memset(s_key, 0, MAX_LEN_FOR_DICTIONARY_KEY *  sizeof(char));
+        sprintf(s_key, "mpu_lost_counter[%d]", i);
+        value = s->mpu_lost_counter[i];
 
-    char s_play_tm[50] = {"\0"}; //max number is 18446744073709551615 for decimal number
-
-    sprintf(s_play_tm, "%lld", play_tm);
-
-    if(strlen(s_play_tm) > 0) {
-        av_dict_set(&(*options), "begin_time", s_play_tm, AV_DICT_MATCH_CASE);
+        if(0 != value)  {
+            memset(s_value, 0, MAX_STRING_LEN_FOR_DECIMAL_NUMBER * sizeof(char));
+            sprintf(s_value, "%lld", value);
+            if(strlen(s_value) > 0) {
+                av_dict_set(&(*options), s_key, s_value, AV_DICT_MATCH_CASE);
+            }
+        }
     }
     return 0;
 }
@@ -948,6 +996,7 @@ smt_callback smt_callback_entity = {
     .get_begin_time     = smt_get_begin_time,
     .set_last_packet_counter = smt_set_last_packet_counter,
     .get_last_packet_counter = smt_get_last_packet_counter,
+    .on_mpu_lost    = smt_on_mpu_lost,
 };
 
 

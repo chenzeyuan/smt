@@ -235,15 +235,16 @@ typedef struct id {
 
 
 typedef struct callback {
-    void         (* mpu_callback_fun)(URLContext *h, smt_mpu *mpu);
+    void         (* mpu_callback_fun)(URLContext *h, smt_mpu *mpu, unsigned short packet_id, int64_t sequence_number);
     void         (* sig_callback_fun)(URLContext *h, smt_sig *sig);
     void         (* gfd_callback_fun)(URLContext *h, smt_gfd *gfd);
     void         (* id_callback_fun) (URLContext *h, smt_id *id);
     int          (* packet_send)     (URLContext *h, unsigned char *buf, int len);
-    int64_t      (* set_begin_time)  (URLContext *h, int64_t begin_time);
-    int64_t      (* get_begin_time)  (URLContext *h);
+    int64_t      (* set_begin_time)  (URLContext *h, unsigned short packet_id, int64_t begin_time);// packet_id indicate the stream type. 0: audio 1: video
+    int64_t      (* get_begin_time)  (URLContext *h, unsigned short packet_id); // packet_id indicate the stream type. 0: audio 1: video
     int          (* set_last_packet_counter)(URLContext *h, unsigned int);
     unsigned int (* get_last_packet_counter)(URLContext *h);
+    int64_t      (* on_mpu_lost)  (URLContext *h, unsigned short packet_id, int64_t count);// packet_id indicate the stream type. 0: audio 1: video
 } smt_callback;
 
 typedef struct smt_receive_entity{

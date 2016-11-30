@@ -112,7 +112,7 @@ int qp_hist           = 0;
 int stdin_interaction = 1;
 int frame_bits_per_raw_sample = 0;
 float max_error_rate  = 2.0/3;
-extern int64_t begin_time;
+extern int64_t ffmpeg_begin_time;
 extern int64_t diff_time;
 
 static int intra_only         = 0;
@@ -277,7 +277,7 @@ static int opt_map(void *optctx, const char *opt, const char *arg)
     int sync_file_idx = -1, sync_stream_idx = 0;
     char *p, *sync;
     char *map;
-    char *allow_unused;
+    char *allow_unused = NULL;
 
     if (*arg == '-') {
         negative = 1;
@@ -594,18 +594,21 @@ static int opt_begintime(void *optctx, const char *opt, const char *arg)
     if('d' == arg[0] || 'D' == arg[0]) {
         int diff = atoi(arg+1);
         diff_time = diff; 
-        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>>  set diff_time=%lldms\n", __FILE__, __LINE__, diff_time );
+        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>>  set diff_time=%lldms\n", __FILE__, __LINE__, (long long int) diff_time );
     } else {
         int64_t begin_time_with_day;
+        int64_t recording_timestamp;
+        struct tm today_zero_time;
+        time_t timep;
         begin_time_with_day = parse_time_or_die(opt, arg, 0) ;
-        int64_t recording_timestamp = begin_time_with_day/ 1E6;
-        struct tm today_zero_time = *localtime((time_t*)&recording_timestamp);
+        recording_timestamp = begin_time_with_day/ 1E6;
+        today_zero_time = *localtime((time_t*)&recording_timestamp);
         today_zero_time.tm_hour = 0;
         today_zero_time.tm_min  = 0;
         today_zero_time.tm_sec  = 0;
-        time_t timep = mktime(&today_zero_time);
-        begin_time = begin_time_with_day /1000 - timep * 1000; //remove year, month ,day
-        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>> begintime is %s , set begin_time=%d\n", __FILE__, __LINE__, arg, begin_time);
+        timep = mktime(&today_zero_time);
+        ffmpeg_begin_time = begin_time_with_day /1000 - timep * 1000; //remove year, month ,day
+        av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>> begintime is %s , set begin_time=%lld\n", __FILE__, __LINE__, arg, (long long int) ffmpeg_begin_time);
     }
     return 0;
 }

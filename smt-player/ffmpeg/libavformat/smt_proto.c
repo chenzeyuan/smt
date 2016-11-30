@@ -31,13 +31,9 @@ static int				sample_index;
 #define INPUT_URL_NUM_MAX 100
 extern smt_callback     smt_callback_entity;
 //for ffmpeg
-int64_t begin_time = 0;
+int64_t ffmpeg_begin_time = 0;
 int64_t diff_time = 0;
 //for ffplay
-
-char*   begin_time_key[INPUT_URL_NUM_MAX];
-int64_t begin_time_value[INPUT_URL_NUM_MAX ];
-
 #if defined(__ANDROID__)
 int64_t begin_time_value = 0;
 #endif
@@ -51,13 +47,13 @@ static int				sample_index;
 int g_id_old=-1;
 int g_mpu_old=0;
 enum {
-INVALID_MPU  = -1,
-INVALID_DATA = -2,
-OUT_OF_RANGE = -3,
-INVALID_MFU  = -4,
-INVALID_SAMPLE_NUMBER = -5,
-OUT_OF_MEMORY= -6,
-INVALID_SIGNALLING_MESSAGE  = -7,
+    INVALID_MPU  = -1,
+    INVALID_DATA = -2,
+    OUT_OF_RANGE = -3,
+    INVALID_MFU  = -4,
+    INVALID_SAMPLE_NUMBER = -5,
+    OUT_OF_MEMORY= -6,
+    INVALID_SIGNALLING_MESSAGE  = -7,
 };
 
 //add for test
@@ -76,21 +72,7 @@ static void print_all(smt_payload_sig * sig){
 }
 //add for test
 
-static int get_index_of_input_url(char* key) {
-    if(NULL == key) return -1;
-    int foundindex = -1;
-    for(int i = 0; i < INPUT_URL_NUM_MAX; i++) {
-        if(begin_time_key[i] == NULL) {
-            break;
-        } else {
-            if(0 == strcmp(begin_time_key[i], key)) {
-                foundindex = i;
-                break;
-            }
-        }
-    }
-    return foundindex;
-}
+
 
 
 static smt_status smt_parse_mpu_payload(URLContext *h, smt_receive_entity *recv, smt_payload_mpu **p)
@@ -479,19 +461,6 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
-                    int index = get_index_of_input_url(h->filename);
-                    if( -1 != index && 0 == begin_time_value[index] && p->packet_id == 0 )  { 
-                        int64_t now_time_us =  av_gettime();
-                        time_t  now_time_s = now_time_us/ (1000*1000);//time(NULL);
-                        struct tm today_zero_time = *localtime(&now_time_s);
-                        today_zero_time.tm_hour = 0;
-                        today_zero_time.tm_min  = 0;
-                        today_zero_time.tm_sec  = 0;
-                        time_t time_zero_s = mktime(&today_zero_time);
-                        int64_t time_zero_us = now_time_us - (now_time_s - time_zero_s )*1000*1000 - (now_time_us%(1000*1000));
-                        begin_time_value[index] = time_zero_us / 1000 + p->timestamp; 
-                    }
-
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
                     //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
@@ -635,6 +604,84 @@ static int smt_find_field(char *buf, int buf_len, char *field, int field_len)
 	return -1;
 }
 
+static unsigned char* smt_mp4_time_info(unsigned char* mp4buffer, unsigned int length, int type) {
+    int i;
+    int bytecount;
+    if(type == 0)
+    {
+        int mdhd_offset = smt_find_field(mp4buffer ,length,"mdhd", 4);
+        if(mdhd_offset  >= 0) {
+            unsigned char* mdhd = mp4buffer  + mdhd_offset; 
+            int mdhd_timescale_offset = 0;
+            int mdhd_duration_offset = 0;
+            int version = (mdhd+0x04)[0];
+            int64_t duration = 0;
+            int32_t timescale = 0;
+            if(version) {
+                mdhd_timescale_offset = 0x18;
+                bytecount = 8;
+                for(i = 0; i++; i < bytecount) 
+                    duration |= mdhd[mdhd_timescale_offset + 0x04 + i] << ( 8 * (bytecount -1 - i));
+                //duration  = *((int64_t*)(mdhd + mdhd_timescale_offset + 0x04));
+            }
+            else {
+                mdhd_timescale_offset  = 0x10;
+                bytecount = 4;
+                duration = mdhd[mdhd_timescale_offset + 0x04 + 0] << 24 |
+                           mdhd[mdhd_timescale_offset + 0x04 + 1] << 16 |
+                           mdhd[mdhd_timescale_offset + 0x04 + 2] << 8  |
+                           mdhd[mdhd_timescale_offset + 0x04 + 3];
+#if 0
+                for(i = 0; i++; i < bytecount) 
+                    duration |= mdhd[mdhd_timescale_offset + 0x04 + i] << ( 8 * (bytecount -1 - i));
+                    //duration  = *((int32_t*)(mdhd + mdhd_timescale_offset +  0x04));
+#endif
+            }
+            mdhd_duration_offset  += 0x04;
+            timescale = mdhd[mdhd_timescale_offset]<<24 | mdhd[mdhd_timescale_offset+1]<<16 | mdhd[mdhd_timescale_offset+2]<<8 | mdhd[mdhd_timescale_offset+3];
+
+#if 0
+            bytecount = 4;
+            for(i = 0; i++; i < bytecount) 
+                timescale  |= ((int32_t)(mdhd[mdhd_timescale_offset  + i]) << ( 8 * (bytecount -1 - i)));
+#endif
+            //av_log(NULL, AV_LOG_ERROR, "0 mpu_duration = %lld ; timescale =%ld\n", duration , *((int32_t*)(mdhd + mdhd_timescale_offset)));
+            //av_log(NULL, AV_LOG_ERROR, "\nmpu_duration = %lld ; timescale =%ld\n", duration ,timescale);
+            //return mdhd;
+        }
+
+    }
+    else
+    {
+        int tfdt_offset = smt_find_field(mp4buffer ,length,"tfdt", 4);
+        if(tfdt_offset  >= 0) {
+            unsigned char* tfdt = mp4buffer  + tfdt_offset; 
+            int64_t baseMediaDecoderTime = 0;
+            int version = (tfdt+0x04)[0];
+            if(version) {
+                bytecount = 8;
+            }
+            else {
+                bytecount = 4;
+            }
+            baseMediaDecoderTime = tfdt[ 0x08 + 0] << 56 |
+                                   tfdt[ 0x08 + 1] << 48 |
+                                   tfdt[ 0x08 + 2] << 40 |
+                                   tfdt[ 0x08 + 3] << 32 |
+                                   tfdt[ 0x08 + 4] << 24 |
+                                   tfdt[ 0x08 + 5] << 16 |
+                                   tfdt[ 0x08 + 6] << 8  |
+                                   tfdt[ 0x08 + 7] ;
+            //for(i = 0; i++; i < bytecount) 
+            //    baseMediaDecoderTime |= tfdt[ 0x08 + i] << ( 8 * (bytecount -1 - i));
+            //av_log(NULL, AV_LOG_ERROR, "\nmpu baseMediaDecoderTime=  %lld\n", baseMediaDecoderTime);
+
+        }
+    }
+    return NULL;
+
+}
+
 static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int asset_id, smt_mpu *mpu)
 {
     smt_packet *iterator;
@@ -775,6 +822,8 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 						it = it->next;
 						seq = it->packet_sequence_number;
 					}
+//                    smt_mp4_time_info(mpu->mpu_header_data, mpu->mpu_header_length, 0);
+//                    smt_mp4_time_info(mpu->moof_header_data, mpu->moof_header_length, 1);
 
                     //check track id in mpu header     
 					int tkhd_offset = smt_find_field(mpu->mpu_header_data ,mpu->mpu_header_length,"tkhd", 4);
@@ -1023,6 +1072,13 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                     av_log(h, AV_LOG_ERROR, "assemble mpu %d failed!\n\n", pld_f->MPU_sequence_number);
                     smt_release_mpu(h, mpu);
                 }else{
+                    if(mpu->mpu_header_data == NULL || mpu->moof_header_data == NULL || mpu->sample_data == NULL) {
+                        av_log(h, AV_LOG_ERROR, "\n mpu have invalid data, mpu_header_data=0x%x, moof_header_data=0x%x, sample_data=0x%x\n",
+                                                mpu->mpu_header_data,
+                                                mpu->moof_header_data,
+                                                mpu->sample_data);
+                        smt_release_mpu(h, mpu);
+                    }
 #ifdef SMT_DUMP
                     char fn[256];
                     memset(fn, 0, 256);
@@ -1044,12 +1100,12 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         today_zero_time.tm_sec  = 0;
                         time_t time_zero_s = mktime(&today_zero_time);
                         int64_t time_zero_us = now_time_us - ((int64_t)(now_time_s - time_zero_s ))*1000*1000 - (now_time_us%(1000*1000));
-//#if defined(__ANDROID__)
-                    if( 0 == smt_callback_entity.get_begin_time(h) && p->packet_id == 1 )  { 
+
+                    if( 0 == smt_callback_entity.get_begin_time(h, p->packet_id) )  { 
                         cur_begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
-                        smt_callback_entity.set_begin_time(h, cur_begin_time_value);
+                        smt_callback_entity.set_begin_time(h, p->packet_id, cur_begin_time_value);
                     }
-//#else
+
                         //int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
                         int64_t todaytime = now_time_us - time_zero_us;
                         int64_t delay = now_time_us - cur_begin_time_value * 1000;
@@ -1062,13 +1118,13 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                 p->packet_sequence_number,
                                 p->packet_counter );
 
-//#endif
+
                     }
 
 
 
                     if(smt_callback_entity.mpu_callback_fun)
-                        smt_callback_entity.mpu_callback_fun(h,mpu);
+                        smt_callback_entity.mpu_callback_fun(h, mpu, p->packet_id, pld->MPU_sequence_number);
                     else
                         smt_release_mpu(h, mpu);
                 }
@@ -1516,7 +1572,7 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
             today_zero_time.tm_min  = 0;
             today_zero_time.tm_sec  = 0;
             time_t timep = mktime(&today_zero_time);
-            begin_time = now_time /1000 - timep * 1000 + diff_time; 
+            ffmpeg_begin_time = now_time /1000 - timep * 1000 + diff_time; 
             diff_time = 0;
         }
         static int64_t first_time = 0;
@@ -1525,7 +1581,7 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         }
         //time_t t;
         //time(&t);
-        pkt->timestamp =  begin_time + (now_time - first_time)/1000 ;
+        pkt->timestamp =  ffmpeg_begin_time + (now_time - first_time)/1000 ;
 		smt_assemble_packet_header(h, snd, pld->data, pkt);
 
         if(position > 0){

@@ -1687,7 +1687,10 @@ static int get_master_sync_type(VideoState *is) {
 }
 
 /* get the current master clock value */
-static double get_master_clock(VideoState *is)
+/* there are two master clock when SMT syncnization is selected, 
+   one master clock is for audio, another master clock is for video,
+   type: 0 audio, 1 video */
+static double get_master_clock(VideoState *is, int type)
 {
     double val;
 
@@ -1701,17 +1704,33 @@ static double get_master_clock(VideoState *is)
         case AV_SYNC_SMT_CLOCK:
         {
             int64_t current_begin_time = 0;
+            int64_t mpu_lost_counter = 0;
             if(!is || !is->ic || !is->ic->pb || !is->ic->pb->opaque) {
                 val = NAN;
             } else {
                 AVDictionary *tmp = NULL;
-                AVDictionaryEntry *e = NULL;
+                AVDictionaryEntry *e_begin_time = NULL;
+                AVDictionaryEntry *e_mpu_lost_counter = NULL;
+                char key[50] = {0};
+
                 is->ic->pb->get(is->ic->pb->opaque, &tmp);
 
-                e = av_dict_get(tmp, "begin_time",NULL, 0);
-                if(e && e->key && e->value) {
-                    current_begin_time = strtol(e->value, NULL, 10);
-                    val = av_gettime()/1000000.0 - current_begin_time /1000.0 + smt_sync_adjust_value;
+                memset(key, 0, 50 * sizeof(char));
+                sprintf(key, "begin_time[%d]", type);
+                e_begin_time = av_dict_get(tmp, key, NULL, 0);
+                if(e_begin_time && e_begin_time->key && e_begin_time->value) {
+                    current_begin_time = strtol(e_begin_time->value, NULL, 10);
+                }
+
+                memset(key, 0, 50 * sizeof(char));
+                sprintf(key, "mpu_lost_counter[%d]", type);
+                e_mpu_lost_counter = av_dict_get(tmp, key, NULL, 0);
+                if(e_mpu_lost_counter && e_mpu_lost_counter->key && e_mpu_lost_counter->value) {
+                    mpu_lost_counter = strtol(e_mpu_lost_counter->value, NULL, 10);
+                }                
+                
+                if(0 != current_begin_time) {
+                    val = av_gettime()/1000000.0 - current_begin_time /1000.0 + smt_sync_adjust_value - 1.5 * mpu_lost_counter;
                 }
                 else {
                     val = NAN;
@@ -1800,7 +1819,7 @@ static double compute_target_delay(double delay, VideoState *is)
     if (get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER) {
         /* if video is slave, we try to correct big delays by
            duplicating or deleting a frame */
-        diff = get_clock(&is->vidclk) - get_master_clock(is);
+        diff = get_clock(&is->vidclk) - get_master_clock(is, 1);
 
         /* skip or repeat frame. We take into account the
            delay to compute the threshold. I still don't know
@@ -1987,15 +2006,15 @@ display:
             if (is->audio_st && is->video_st)
                 av_diff = get_clock(&is->audclk) - get_clock(&is->vidclk);
             else if (is->video_st)
-                av_diff = get_master_clock(is) - get_clock(&is->vidclk);
+                av_diff = get_master_clock(is, 1) - get_clock(&is->vidclk);
             else if (is->audio_st)
-                av_diff = get_master_clock(is) - get_clock(&is->audclk);
+                av_diff = get_master_clock(is, 0) - get_clock(&is->audclk);
             time_diff = cur_time - last_time[is->idx_screen];
             sample_rate =  1000000 / (double)time_diff * (frame_number - last_frame[is->idx_screen]);
             av_log(NULL, AV_LOG_INFO,
                    "No.%1d | %7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB VFrame[%d] = %2.3f f=%"PRId64"/%"PRId64"\r",
                    is->idx_screen,
-                   get_master_clock(is),
+                   get_master_clock(is, 1),
                    (is->audio_st && is->video_st) ? "A-V" : (is->video_st ? "M-V" : (is->audio_st ? "M-A" : "   ")),
                    av_diff,
                    is->frame_drops_early + is->frame_drops_late,
@@ -2033,7 +2052,7 @@ static int get_video_frame(VideoState *is, Frame *vp)
 
         if (framedrop>0 || (framedrop && get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER)) {
             if (frame->pts != AV_NOPTS_VALUE) {
-                double diff = dpts - get_master_clock(is);
+                double diff = dpts - get_master_clock(is, 1);
                 if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD &&
                     diff - is->frame_last_filter_delay < 0 &&
                     vp->serial == is->vidclk.serial &&
@@ -2523,7 +2542,7 @@ static int synchronize_audio(VideoState *is, int nb_samples)
         double diff, avg_diff;
         int min_nb_samples, max_nb_samples;
 
-        diff = get_clock(&is->audclk) - get_master_clock(is);
+        diff = get_clock(&is->audclk) - get_master_clock(is, 0);
 
         if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD) {
             is->audio_diff_cum = diff + is->audio_diff_avg_coef * is->audio_diff_cum;
@@ -3937,7 +3956,7 @@ static void event_loop(VideoState *cur_stream[])
                         pos += incr;
                         stream_seek(cur_stream[main_screen], pos, incr, 1);
                     } else {
-                        pos = get_master_clock(cur_stream[main_screen]);
+                        pos = get_master_clock(cur_stream[main_screen], 1);
                         if (isnan(pos))
                             pos = (double)cur_stream[main_screen]->seek_pos / AV_TIME_BASE;
                         pos += incr;
