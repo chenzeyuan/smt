@@ -1078,6 +1078,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                                 mpu->moof_header_data,
                                                 mpu->sample_data);
                         smt_release_mpu(h, mpu);
+                        return SMT_STATUS_ERROR;
                     }
 #ifdef SMT_DUMP
                     char fn[256];
@@ -1101,10 +1102,14 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         time_t time_zero_s = mktime(&today_zero_time);
                         int64_t time_zero_us = now_time_us - ((int64_t)(now_time_s - time_zero_s ))*1000*1000 - (now_time_us%(1000*1000));
 
-                    if( 0 == smt_callback_entity.get_begin_time(h, p->packet_id) )  { 
                         cur_begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
-                        smt_callback_entity.set_begin_time(h, p->packet_id, cur_begin_time_value);
-                    }
+                        if( 0 == smt_callback_entity.get_begin_time(h, p->packet_id) )  { 
+                            smt_callback_entity.set_begin_time(h, p->packet_id, cur_begin_time_value);
+                                                        av_log(h, AV_LOG_INFO, "\njxj set asset_id=%d(mpu=%d) begin_time=%lld\n",
+                                        p->packet_id, 
+                                        pld_f->MPU_sequence_number,
+                                        cur_begin_time_value );
+                        }
 
                         //int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
                         int64_t todaytime = now_time_us - time_zero_us;
