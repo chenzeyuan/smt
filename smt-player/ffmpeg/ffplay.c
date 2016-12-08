@@ -90,10 +90,10 @@ extern int64_t begin_time;
 /* If a frame duration is longer than this, it will not be duplicated to compensate AV sync */
 #define AV_SYNC_FRAMEDUP_THRESHOLD 0.1
 /* no AV correction is done if too big error */
-#define AV_NOSYNC_THRESHOLD 10.0
+#define AV_NOSYNC_THRESHOLD 15.0
 
 /* maximum audio speed change to get correct sync */
-#define SAMPLE_CORRECTION_PERCENT_MAX 10
+#define SAMPLE_CORRECTION_PERCENT_MAX 20
 
 /* external clock speed adjustment constants for realtime sources based on buffer fullness */
 //#define EXTERNAL_CLOCK_SPEED_MIN  0.900
@@ -1704,7 +1704,7 @@ static double get_master_clock(VideoState *is, int type)
         case AV_SYNC_SMT_CLOCK:
         {
             int64_t current_begin_time = 0;
-            int64_t mpu_lost_counter = 0;
+            int64_t mpu_lost_time = 0;
             if(!is || !is->ic || !is->ic->pb || !is->ic->pb->opaque) {
                 val = NAN;
             } else {
@@ -1723,14 +1723,14 @@ static double get_master_clock(VideoState *is, int type)
                 }
 
                 memset(key, 0, 50 * sizeof(char));
-                sprintf(key, "mpu_lost_counter[%d]", type);
+                sprintf(key, "mpu_lost_time[%d]", type);
                 e_mpu_lost_counter = av_dict_get(tmp, key, NULL, 0);
                 if(e_mpu_lost_counter && e_mpu_lost_counter->key && e_mpu_lost_counter->value) {
-                    mpu_lost_counter = strtol(e_mpu_lost_counter->value, NULL, 10);
+                    mpu_lost_time = strtol(e_mpu_lost_counter->value, NULL, 10);
                 }                
                 
                 if(0 != current_begin_time) {
-                    val = av_gettime()/1000000.0 - current_begin_time /1000.0 + smt_sync_adjust_value - 1.5 * mpu_lost_counter;
+                    val = av_gettime()/1000000.0 - current_begin_time /1000.0 + smt_sync_adjust_value - mpu_lost_time / 1000.0;
                 }
                 else {
                     val = NAN;

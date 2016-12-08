@@ -604,6 +604,51 @@ static int smt_find_field(char *buf, int buf_len, char *field, int field_len)
 	return -1;
 }
 
+
+
+
+static int smt_parse_media_info(smt_mpu *mpu) {
+    if(!mpu) return 0;
+    unsigned char* mp4buffer = mpu->mpu_header_data;
+    unsigned int   length    = mpu->mpu_header_length;
+    int mdhd_offset = smt_find_field(mp4buffer ,length,"mdhd", 4);
+    if(mdhd_offset  >= 0) {
+        unsigned char* mdhd = mp4buffer  + mdhd_offset;
+        int mdhd_timescale_offset = 0;
+        int mdhd_duration_offset = 0;
+        int version = (mdhd+0x04)[0];
+        int64_t duration = 0;
+        int32_t timescale = 0;
+
+
+        if(version) {
+            mdhd_timescale_offset = 0x18;
+            mpu->media_duration = mdhd[mdhd_timescale_offset + 0x04 + 0] << 56 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 1] << 48 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 2] << 40 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 3] << 32 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 4] << 24 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 5] << 16 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 6] << 8  |
+                       mdhd[mdhd_timescale_offset + 0x04 + 7];
+        }
+        else {
+            mdhd_timescale_offset  = 0x10;
+            mpu->media_duration = mdhd[mdhd_timescale_offset + 0x04 + 0] << 24 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 1] << 16 |
+                       mdhd[mdhd_timescale_offset + 0x04 + 2] << 8  |
+                       mdhd[mdhd_timescale_offset + 0x04 + 3];
+        }
+        mpu->timescale = mdhd[mdhd_timescale_offset + 0] << 24 | 
+                    mdhd[mdhd_timescale_offset + 1] << 16 | 
+                    mdhd[mdhd_timescale_offset + 2] <<  8 | 
+                    mdhd[mdhd_timescale_offset + 3];
+
+        
+    }
+    return 1;
+}
+
 static unsigned char* smt_mp4_time_info(unsigned char* mp4buffer, unsigned int length, int type) {
     int i;
     int bytecount;
@@ -824,6 +869,7 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 					}
 //                    smt_mp4_time_info(mpu->mpu_header_data, mpu->mpu_header_length, 0);
 //                    smt_mp4_time_info(mpu->moof_header_data, mpu->moof_header_length, 1);
+                    //smt_parser_media_info(mpu);
 
                     //check track id in mpu header     
 					int tkhd_offset = smt_find_field(mpu->mpu_header_data ,mpu->mpu_header_length,"tkhd", 4);
@@ -1060,7 +1106,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                 smt_packet *iterator;
                 smt_mpu *mpu = (smt_mpu *)av_mallocz(sizeof(smt_mpu));
                 mpu->asset = asset_id;
-                mpu->sequnce = pld_f->MPU_sequence_number;
+                mpu->sequence = pld_f->MPU_sequence_number;
                 iterator = recv->mpu_head[asset_id];//get first smt packet of the mpu
                 unsigned int timestamp_of_first_packet = iterator->timestamp;
 
@@ -1126,10 +1172,11 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
                     }
 
+                    smt_parse_media_info(mpu);
 
 
                     if(smt_callback_entity.mpu_callback_fun)
-                        smt_callback_entity.mpu_callback_fun(h, mpu, p->packet_id, pld->MPU_sequence_number);
+                        smt_callback_entity.mpu_callback_fun(h, mpu);
                     else
                         smt_release_mpu(h, mpu);
                 }

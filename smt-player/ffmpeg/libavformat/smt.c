@@ -50,6 +50,9 @@
 #define SMT_MAX_DELIVERY_NUM    10
 #define SMT_MAX_PACKED_NUM      2
 
+#define MAX_STRING_LEN_FOR_DECIMAL_NUMBER 50
+#define MAX_LEN_FOR_DICTIONARY_KEY        50
+
 typedef struct SMT4AvLogExt {
     int     send_counter;
     int64_t start_time;
@@ -88,6 +91,8 @@ typedef struct SMTContext {
     int64_t begin_time[SMT_MAX_PACKED_NUM];//0:audio, 1:video
     int64_t mpu_sequence_number[SMT_MAX_PACKED_NUM];//0:audio, 1:video
     int64_t mpu_lost_counter[SMT_MAX_PACKED_NUM];//0:audio, 1:video
+    int64_t media_duration[SMT_MAX_PACKED_NUM];//0:audio, 1:video, duration is an integer that declares the duration of this media(in the scale of the timescale). 
+    int64_t mpu_duration[SMT_MAX_PACKED_NUM];//0:audio, 1:video, mpu_duration is an integer that declares the duration of this media(in the scale of millisecond). 
     unsigned int last_packet_counter;
 } SMTContext;
 
@@ -111,14 +116,35 @@ static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t 
     return tmp;
 }
 
-static void smt_on_get_mpu(URLContext *h, smt_mpu *mpu, unsigned short packet_id, int64_t sequence_number)
+static void smt_on_get_mpu(URLContext *h, 
+                                 smt_mpu *mpu)
 {
     SMTContext *s = h->priv_data;
-    if(s->mpu_sequence_number[packet_id] >= 0 && s->mpu_sequence_number[packet_id] + 1 != sequence_number) {
-        av_assert0(sequence_number > s->mpu_sequence_number[packet_id] + 1);
-        smt_on_mpu_lost(h, packet_id, sequence_number - s->mpu_sequence_number[packet_id] - 1); 
+
+
+    /* calculate the duration of every mpu */
+    /* The duration of video MPU is fixed, but the duration of audio MPU is not fixed. 
+       now average value is used for estimate duration. 
+       To be modified to a better solution in the future */
+    if(/*0 == s->mpu_duration[mpu->asset] && */ 0 != s->media_duration[mpu->asset]) {
+        int64_t temp = (mpu->media_duration - s->media_duration[mpu->asset])  / (mpu->sequence - s->mpu_sequence_number[mpu->asset]);
+        if(s->mpu_duration[mpu->asset] == 0) {
+            s->mpu_duration[mpu->asset] = temp * 1000 / mpu->timescale;
+        } else {
+            s->mpu_duration[mpu->asset] = (4 * s->mpu_duration[mpu->asset] + temp * 1000 / mpu->timescale + 1)/5;
+        }
+        av_log(NULL, AV_LOG_INFO, "\n mpu_duration[%d]=%lld\n", mpu->asset,  s->mpu_duration[mpu->asset]);
     }
-    s->mpu_sequence_number[packet_id] = sequence_number;
+    s->media_duration[mpu->asset] = mpu->media_duration;
+
+    if(s->mpu_sequence_number[mpu->asset] >= 0 && s->mpu_sequence_number[mpu->asset] + 1 != mpu->sequence) {
+        av_assert0(mpu->sequence > s->mpu_sequence_number[mpu->asset] + 1);
+        smt_on_mpu_lost(h, mpu->asset, mpu->sequence - s->mpu_sequence_number[mpu->asset] - 1); 
+    }
+
+    s->mpu_sequence_number[mpu->asset] = mpu->sequence;    
+    av_log(NULL, AV_LOG_INFO, "\n on get mpu, asset=%d, sequence=%d, duration=%lld, timescale=%ld\n", 
+                                     mpu->asset,  mpu->sequence, mpu->media_duration, mpu->timescale);
 
     int free_space_in_fifo;
     //if(!mpu->asset)
@@ -928,8 +954,14 @@ static unsigned int smt_get_last_packet_counter(URLContext *h) {
     return s->last_packet_counter;    
 }
 
-#define MAX_STRING_LEN_FOR_DECIMAL_NUMBER 50
-#define MAX_LEN_FOR_DICTIONARY_KEY        50
+
+static unsigned int smt_set_media_info(URLContext *h, unsigned int mpu_sequence, unsigned short packet_id, int64_t duration, int32_t timescale) {
+    if(!h || !h->priv_data) return 0;
+    SMTContext *s = h->priv_data;
+    return s->last_packet_counter;    
+}
+
+
 static int64_t smt_get(URLContext *h, AVDictionary **options)
 {
     SMTContext *s = NULL;
@@ -956,8 +988,8 @@ static int64_t smt_get(URLContext *h, AVDictionary **options)
         }
         /*--------------mpu lost------------------*/
         memset(s_key, 0, MAX_LEN_FOR_DICTIONARY_KEY *  sizeof(char));
-        sprintf(s_key, "mpu_lost_counter[%d]", i);
-        value = s->mpu_lost_counter[i];
+        sprintf(s_key, "mpu_lost_time[%d]", i);
+        value = s->mpu_lost_counter[i] * s->mpu_duration[i];
 
         if(0 != value)  {
             memset(s_value, 0, MAX_STRING_LEN_FOR_DECIMAL_NUMBER * sizeof(char));

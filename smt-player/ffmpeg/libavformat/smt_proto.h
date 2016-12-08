@@ -197,7 +197,9 @@ typedef struct mpu {
 	unsigned int	sample_length;
     unsigned int    offset;
     int             asset;
-    int             sequnce;
+    int             sequence;
+    int64_t         media_duration;
+    int32_t         timescale;
 /*
 	struct sample{
 		unsigned char*	sample_data;
@@ -235,7 +237,7 @@ typedef struct id {
 
 
 typedef struct callback {
-    void         (* mpu_callback_fun)(URLContext *h, smt_mpu *mpu, unsigned short packet_id, int64_t sequence_number);
+    void         (* mpu_callback_fun)(URLContext *h, smt_mpu *mpu);
     void         (* sig_callback_fun)(URLContext *h, smt_sig *sig);
     void         (* gfd_callback_fun)(URLContext *h, smt_gfd *gfd);
     void         (* id_callback_fun) (URLContext *h, smt_id *id);
