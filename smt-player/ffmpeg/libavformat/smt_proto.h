@@ -320,7 +320,8 @@ int info_change(int id_new,int mpu_new);
 extern char* ext_inform_server;
 extern SMTContext * smtContext;
 extern URLContext * smtH;
-
+extern int SMT_FD[SMT_MAX_DELIVERY_NUM];
+extern int nb_smt_fd;
 
 #endif
 

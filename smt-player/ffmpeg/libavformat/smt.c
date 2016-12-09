@@ -50,7 +50,7 @@ static unsigned int consumption_length = 0;
 
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
-int server_socket_fd = 0;
+int server_socket_fd ;
 
 
 static void inform_server_add(char * server_addr, int fd) 
@@ -218,7 +218,7 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
     } else if( number_size <= info->send_counter) {
         int64_t end_time = av_gettime();
         float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
-        av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
+        av_log(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
         info->start_time = 0;
         info->send_counter = 0;
         info->len_sum = 0;
@@ -662,10 +662,15 @@ static int smt_open(URLContext *h, const char *uri, int flags)
         log_net_error(h, AV_LOG_WARNING, "setsockopt(SO_RECVBUF)");
     }
 
+
     s->smt_fd[0] = smt_fd;
     s->smt_fd_size = 1;
+    
     smtContext = s;
     smtH = h;
+
+    SMT_FD[nb_smt_fd+1] = smt_fd;
+    nb_smt_fd++;
 
     if (ext_inform_server) {
         inform_server_add(ext_inform_server, smt_fd);
@@ -994,11 +999,13 @@ int smt_del_delivery_url(const char *uri)
     for(i = 1; i < smtContext->smt_fd_size; i++)
     {    
         struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
-        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s \n", uri, inet_ntoa(dest_addr->sin_addr));
-        if(!strstr(uri, inet_ntoa(dest_addr->sin_addr)))
+        char addr_buf[100];
+        sprintf(addr_buf, "%s:%d", inet_ntoa(dest_addr->sin_addr), (int)ntohs(dest_addr->sin_port));
+        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s \n", uri, addr_buf);
+        if(!strcmp(uri, addr_buf))
             continue;
         
-        av_log(NULL, AV_LOG_WARNING, "found try to del %s \n", inet_ntoa(dest_addr->sin_addr));
+        av_log(NULL, AV_LOG_WARNING, "found try to del %s on slot %d \n", inet_ntoa(dest_addr->sin_addr), i);
         if (smtContext->is_multicast[i]) 
             smt_leave_multicast_group(smtContext->smt_fd[i], (struct sockaddr *)&smtContext->dest_addr[i],(struct sockaddr *)&smtContext->local_addr_storage[i]);
         closesocket(smtContext->smt_fd[i]);

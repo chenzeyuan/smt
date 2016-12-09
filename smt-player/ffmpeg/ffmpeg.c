@@ -213,6 +213,11 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
             sprintf(buffer+strlen(buffer), "%d", (int)ntohs(client_addr.sin_port));
             av_log(NULL, AV_LOG_WARNING, "[Result] SOURCE address is changed to %s\n", buffer);
             delete_address = av_strdup(buffer);
+
+            // Warning: server continue forwarding data to keep the session alive.
+            // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
+            // As the result, do NOT erase this sleep() for 2 seconds.
+            av_usleep(2000000);
         }
 
         #if 0

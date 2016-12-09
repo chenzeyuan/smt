@@ -3613,7 +3613,7 @@ static void inform_server_add(char * server_addr, const char * stream)
         return;
     }
 
-    av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
+    av_log(NULL, AV_LOG_WARNING, "[Add]inform server address %s:%s command %s\n", address, port, buffer);
 }
 
 static void update_smt_sync_adjust_value(double incr) {
@@ -4052,10 +4052,9 @@ static void event_loop(VideoState *cur_stream[])
                 int index = event.user.code;
                 char * delete_server = event.user.data1;
                 int i = 0;
-                av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d required to be DELETEd\n", input_filename[index], index);
+                av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d:%d required to be DELETEd\n", input_filename[index], index ,nb_input_files);
 
-                // NAT punching cannot send by this session.
-                informs_server_delete(delete_server, smtContext->smt_fd[index]);
+                informs_server_delete(delete_server, SMT_FD[index]);
 
                 // first to hide the window to prevent the picture flutter 
                 SDL_HideWindow(window[index]);
@@ -4064,12 +4063,16 @@ static void event_loop(VideoState *cur_stream[])
                  // Warning must set to NULL right now!!!
                 global_is[index] = NULL;  
 
+                av_log(NULL, AV_LOG_WARNING, "1. total stream is: %d\n", nb_input_files);
+
                 if (renderer[index])
                     SDL_DestroyRenderer(renderer[index]);
                 if (window[index])
                     SDL_DestroyWindow(window[index]);
                 window[index] = NULL;
                 renderer[index] = NULL;
+
+                av_log(NULL, AV_LOG_WARNING, "2. total stream is: %d\n", nb_input_files);
 
                 //free(input_filename[index]);
 
@@ -4082,8 +4085,10 @@ static void event_loop(VideoState *cur_stream[])
                     renderer[i] = renderer[i+1];
                     global_is[i]->idx_screen--;
                     memcpy(&input_file_resource[i], &input_file_resource[i+1], sizeof(ResourceParam));
+                    SMT_FD[index] = SMT_FD[index+1];
                     //begin_time_value[i] = begin_time_value[i+1];
                 }
+                av_log(NULL, AV_LOG_WARNING, "total stream is: %d\n", nb_input_files);
 
                 // finally set the last slot to null
                 input_file_resource[i].screen_posx = -1;
@@ -4091,8 +4096,11 @@ static void event_loop(VideoState *cur_stream[])
                 window[i] = NULL;
                 renderer[i] = NULL;
                 nb_input_files--;
+                nb_smt_fd--;
 
                 refresh_video();
+
+                av_log(NULL, AV_LOG_WARNING, "total stream is: %d\n", nb_input_files);
 
                 // NAT punching cannot send by this session.
                 //inform_server_delete(delete_server,input_filename[index]);
@@ -4540,7 +4548,7 @@ static int handle_command(char * command)
                 }
             }
             if( i <= nb_input_files ) {
-                av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already\n", added_address);
+                av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already total: %d\n", added_address, nb_input_files);
                 return -1;
             } 
 
