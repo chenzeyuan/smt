@@ -1499,7 +1499,6 @@ static int video_open(VideoState *is)
             }
         }
         else {
-             
             if(is_modify && is->idx_screen == nb_input_files) {
                 // do not show it right now
                 SDL_Event e;
@@ -1530,7 +1529,7 @@ static int video_open(VideoState *is)
                     is->width  = w;
                     is->height = h;
                 }
-                else if (input_file_resource[is->idx_screen].screen_posx != -1) {
+                else if (input_file_resource[is->idx_screen].screen_posx != -1) {  
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
                     input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
@@ -1564,6 +1563,7 @@ static int video_open(VideoState *is)
                     is->height = h/4 ;
                 }
                 else{
+                    
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
                         input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;

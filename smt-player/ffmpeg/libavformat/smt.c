@@ -305,7 +305,7 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
 
 
-             // TODO: liminghao
+             // TODO: liminghao smt_fd[] is not used for hole punching
             //ret = sendto (s->smt_fd[i], buf, len, 0,
             ret = sendto (server_socket_fd, buf, len, 0,
                           (struct sockaddr *) &s->dest_addr[i],
@@ -1001,7 +1001,7 @@ int smt_del_delivery_url(const char *uri)
         struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
         char addr_buf[100];
         sprintf(addr_buf, "%s:%d", inet_ntoa(dest_addr->sin_addr), (int)ntohs(dest_addr->sin_port));
-        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s \n", uri, addr_buf);
+        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s, total: %d \n", uri, addr_buf, smtContext->smt_fd_size);
         if(!strcmp(uri, addr_buf))
             continue;
         
