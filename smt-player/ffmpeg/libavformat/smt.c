@@ -48,9 +48,13 @@
 
 static unsigned int consumption_length = 0;
 
+static SMTContext * smtContext;
+static URLContext * smtH;
+
+
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
-int server_socket_fd ;
+int server_socket_fd = -1 ;
 
 
 static void inform_server_add(char * server_addr, int fd) 
@@ -306,10 +310,17 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 
 
              // TODO: liminghao smt_fd[] is not used for hole punching
-            //ret = sendto (s->smt_fd[i], buf, len, 0,
-            ret = sendto (server_socket_fd, buf, len, 0,
-                          (struct sockaddr *) &s->dest_addr[i],
-                          s->dest_addr_len[i]);
+            if(server_socket_fd != -1) {
+                ret = sendto (server_socket_fd, buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+            else {
+                ret = sendto (s->smt_fd[i], buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+                
         } else {
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
