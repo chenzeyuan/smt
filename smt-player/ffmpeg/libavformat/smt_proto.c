@@ -72,6 +72,33 @@ static void print_all(smt_payload_sig * sig){
 }
 //add for test
 
+/*
+ *  output: p_zero_oclock,  time of zero oclock (local time zone) in time_t format
+ *  return: int64_t formate 
+*/
+static int64_t get_today_zero_oclock(time_t *p_zero_oclock) {
+    time_t  now_time_second;
+    int64_t now_time_micros =  av_gettime();
+    struct tm today_zero_time;
+    time_t time_zero_second;
+    int64_t time_zero_micros;
+
+    now_time_second = (time_t)(now_time_micros/ (1000*1000));
+    today_zero_time = *localtime(&now_time_second);
+    today_zero_time.tm_hour = 0;
+    today_zero_time.tm_min  = 0;
+    today_zero_time.tm_sec  = 0;
+    time_zero_second = mktime(&today_zero_time);
+    if(p_zero_oclock != NULL) {
+        *p_zero_oclock = time_zero_second;
+    }
+    time_zero_micros = now_time_micros - 
+                               ((int64_t)(now_time_second - time_zero_second ))*1000*1000 - 
+                               (now_time_micros%(1000*1000));
+    return time_zero_micros;
+}
+
+
 
 
 
@@ -468,7 +495,11 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
 
                     if(smt_callback_entity.get_last_packet_counter(h) + 1 == p->packet_counter || p->packet_counter == 0) {
                     } else {
-                        av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
+                        char* device = NULL;
+                        device = get_av_log_device_info();
+                        if(!device) device = "none";
+                        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
+                                device,
                                 h->filename,
                                 p->packet_counter - smt_callback_entity.get_last_packet_counter(h) -1,
                                 p->packet_counter,
@@ -1141,6 +1172,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         int64_t cur_begin_time_value;
                         int64_t now_time_us =  av_gettime();
                         time_t  now_time_s = (time_t)(now_time_us/ (1000*1000));//time(NULL);
+                        char* device = NULL;
                         struct tm today_zero_time = *localtime(&now_time_s);
                         today_zero_time.tm_hour = 0;
                         today_zero_time.tm_min  = 0;
@@ -1159,8 +1191,12 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
                         //int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
                         int64_t todaytime = now_time_us - time_zero_us;
-                        int64_t delay = now_time_us - cur_begin_time_value * 1000;
-                        av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
+                        //int64_t delay = now_time_us - cur_begin_time_value * 1000;
+                        int64_t delay = now_time_us - time_zero_us -  (int64_t)p->timestamp * 1000;
+                        device = get_av_log_device_info();
+                        if(!device) device = "none";
+                        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
+                                device,
                                 h->filename, 
                                 now_time_us , 
                                 cur_begin_time_value * 1000,
@@ -1633,6 +1669,20 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         }
         //time_t t;
         //time(&t);
+		/* time_displacement is used for delay calculate in infomation server */
+        static int log_time_displacement_count = 0;
+        if( 0 == log_time_displacement_count) {
+            char* device = NULL;
+            device = get_av_log_device_info();
+            if(!device) device = "none";
+            int64_t diffdiff = ffmpeg_begin_time * 1000 + get_today_zero_oclock(NULL) - first_time; 
+            av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time_displacement\":\"%lld\"}\n", 
+                    device,
+                    h->filename,
+                    diffdiff);
+        } 
+        log_time_displacement_count = (log_time_displacement_count>=5000)?0:(log_time_displacement_count+1);
+
         pkt->timestamp =  ffmpeg_begin_time + (now_time - first_time)/1000 ;
 		smt_assemble_packet_header(h, snd, pld->data, pkt);
 

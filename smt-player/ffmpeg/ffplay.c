@@ -448,9 +448,8 @@ static float SDL_SpeedSamplerAdd(SDL_SpeedSampler *sampler, int enable_log, cons
     if (enable_log && (sampler->last_log_time + 1000 < current || sampler->last_log_time > current)) {
         sampler->last_log_time = current;
         //ALOGW("%s: %.2f\n", log_tag ? log_tag : "N/A", samples_per_second);
-        //av_log_ext(NULL, AV_LOG_ERROR, "%s: %.2f\n", log_tag ? log_tag : "N/A", samples_per_second);
         if(0 == sampler->next_index) {
-            av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"vfps\":\"%.2f\"}\n", log_tag, current, samples_per_second);
+            //av_log_ext(NULL, AV_LOG_ERROR, "{\"filename\":\"%s\",\"time\":\"%lld\",\"vfps\":\"%.2f\"}\n", log_tag, current, samples_per_second);
         }
     }
 

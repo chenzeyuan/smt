@@ -271,12 +271,15 @@ static int Dequeue(Queue *q, void **data) {
 }
 
 static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, int number_size) {
+    char* device = NULL;
     if(0 == info->send_counter) {
         info->start_time = av_gettime();
     } else if( number_size <= info->send_counter) {
         int64_t end_time = av_gettime();
         float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
-        av_log_ext(NULL, AV_LOG_INFO, "{\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", filename, end_time, rate);
+        device = get_av_log_device_info();
+        if(!device) device = "none";
+        av_log_ext(NULL, AV_LOG_INFO, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", device, filename, end_time, rate);
         info->start_time = 0;
         info->send_counter = 0;
         info->len_sum = 0;
@@ -298,6 +301,7 @@ static void send_socket_cache(Queue *q) {
     delay_time -= 60;  //subtract program processing time
     delay_time = delay_time < 1? 1:delay_time;
     while(1) {
+        static struct SMT4AvLogExt info_av_log_ext = {0};
         int len = Dequeue(q, &buf);
         if(NULL == buf) continue;
 
@@ -312,7 +316,7 @@ static void send_socket_cache(Queue *q) {
                 if(s->smt_fd[i] == NULL) continue;
                 ret = send(s->smt_fd[i], buf, len, 0);
             }
-            smt_calc_rate(&s->info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
+            smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
       }
       av_usleep(delay_time);
       free(buf);
