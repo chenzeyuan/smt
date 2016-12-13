@@ -46,8 +46,46 @@
 #define SMT_NO_AUDIO 0
 #define SMT_NO_VIDEO 0
 
-static unsigned int consumption_length = 0;
+typedef struct SMT4AvLogExt {
+    int     send_counter;
+    int64_t start_time;
+    int64_t len_sum;
+} SMT4AvLogExt;
 
+typedef struct SMTContext {
+    const AVClass *class;
+    int smt_fd[SMT_MAX_DELIVERY_NUM];
+    int smt_fd_size;
+    int buffer_size;
+    int pkt_size;
+    int is_multicast[SMT_MAX_DELIVERY_NUM];
+    int is_broadcast;
+    int local_port;
+    int reuse_socket;
+    char *localaddr;
+    int is_connected;
+    char *sources;
+    struct sockaddr_storage dest_addr[SMT_MAX_DELIVERY_NUM];
+    int dest_addr_len[SMT_MAX_DELIVERY_NUM];
+    struct sockaddr_storage local_addr_storage[SMT_MAX_DELIVERY_NUM];
+
+    int fifo_size;
+    AVFifoBuffer *fifo, *head, *cache;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    pthread_t mpu_generate_thread;
+    bool generate_thread_run;
+    bool hflag;
+    int stream_index;
+    int audio_head_available, video_head_available;
+    smt_receive_entity *receive;
+    smt_send_entity *send;
+    struct SMT4AvLogExt info_av_log_ext;
+    int64_t begin_time;
+    unsigned int last_packet_counter;
+} SMTContext;
+
+static unsigned int consumption_length = 0;
 static SMTContext * smtContext;
 static URLContext * smtH;
 
