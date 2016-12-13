@@ -2252,4 +2252,13 @@ int opt_avlogext(void *optctx, const char *opt, const char *arg)
     set_av_log_ext(arg);
     return 0;
 }
+
+int opt_deviceinfo(void *optctx, const char *opt, const char *arg)
+{
+    set_av_log_device_info(arg);
+    return 0;
+}
+
+
+
 #endif

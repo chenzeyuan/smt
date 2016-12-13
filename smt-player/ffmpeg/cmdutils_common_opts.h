@@ -24,6 +24,7 @@
     { "cpuflags"   , HAS_ARG | OPT_EXPERT, { .func_arg = opt_cpuflags }, "force specific cpu flags", "flags" },
     { "hide_banner", OPT_BOOL | OPT_EXPERT, {&hide_banner},     "do not show program banner", "hide_banner" },
     { "avlogext", HAS_ARG | OPT_EXPERT, { .func_arg = opt_avlogext }, "set remote log address and port", "type" },
+    { "deviceinfo", HAS_ARG | OPT_EXPERT, { .func_arg = opt_deviceinfo }, "set current device information", "type" },
 #if CONFIG_OPENCL
     { "opencl_bench", OPT_EXIT, {.func_arg = opt_opencl_bench}, "run benchmark on all OpenCL devices and show results" },
     { "opencl_options", HAS_ARG, {.func_arg = opt_opencl},      "set OpenCL environment options" },

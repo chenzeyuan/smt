@@ -357,6 +357,9 @@ int av_log_get_flags(void);
 void av_log_ext(void* avcl, int level, const char *fmt, ...);
 void set_av_log_ext(char* dest);
 #endif
+void set_av_log_device_info(char* info);
+char* get_av_log_device_info(void);
+
 
 /**
  * @}

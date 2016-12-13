@@ -126,6 +126,8 @@ static const uint32_t color[16 + AV_CLASS_CATEGORY_NB] = {
 #endif
 static int use_color = -1;
 
+static char* device_information = NULL;
+
 static void check_color_terminal(void)
 {
 #if defined(_WIN32) && !defined(__MINGW32CE__) && HAVE_SETCONSOLETEXTATTRIBUTE
@@ -527,6 +529,23 @@ void init_av_log_ext() {
     pthread_t send_log_thread;
     send_log_thread= pthread_create(&send_log_thread, NULL, send_log, GetQueue());
 }
+
+
+
+void set_av_log_device_info(char* info) {
+    if(!info) return;
+    if(NULL != device_information) {
+        free(device_information);
+        device_information = NULL;
+    }
+    device_information = (char*)malloc(strlen(info) +1);
+    strcpy(device_information, info);
+}
+
+char* get_av_log_device_info(void) {
+    return device_information; 
+}
+
 
 void set_av_log_ext(char* dest) {
     if(!dest) return;
