@@ -87,6 +87,7 @@ typedef struct SMTContext {
     int audio_head_available, video_head_available;
     smt_receive_entity *receive;
     smt_send_entity *send;
+    char remote_server[100];
     struct SMT4AvLogExt info_av_log_ext;
     int64_t begin_time[SMT_MAX_PACKED_NUM];//0:audio, 1:video
     int64_t mpu_sequence_number[SMT_MAX_PACKED_NUM];//0:audio, 1:video
@@ -99,7 +100,6 @@ typedef struct SMTContext {
 static unsigned int consumption_length = 0;
 static SMTContext * smtContext;
 static URLContext * smtH;
-static char remote_server[100];
 
 static struct SMT4AvLogExt info_av_log_ext = {0};
 #define NUMBER_SIZE 5000
@@ -812,8 +812,8 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     SMT_FD[nb_smt_fd+1] = smt_fd;
     nb_smt_fd++;
 
-    sprintf(remote_server, "%s:%d", hostname, port);
-    inform_server_add(remote_server, smt_fd);
+    sprintf(s->remote_server, "%s:%d", hostname, port);
+    inform_server_add(s->remote_server, smt_fd);
 
 
     s->send = NULL;
@@ -938,7 +938,7 @@ static int smt_close(URLContext *h)
     struct tm *tp = localtime(&t);
     av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
 
-    informs_server_delete(remote_server, s->smt_fd[0]);
+    informs_server_delete(s->remote_server, s->smt_fd[0]);
 
     for(i = 0; i < s->smt_fd_size; i++) {
         if (s->is_multicast[i]) 
