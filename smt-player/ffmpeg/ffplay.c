@@ -417,7 +417,6 @@ static int64_t last_switch_request = 0;
 static SDL_Window *window[MAX_SCREEN_FLOWS];
 static SDL_Renderer *renderer[MAX_SCREEN_FLOWS];
 static void inform_server_delete(char * server_addr, const char * stream) ;
-static void informs_server_delete(char * server_addr, int fd) ;
 static void inform_server_add(char * server_addr, const char * stream) ;
 
 
@@ -3523,39 +3522,6 @@ static void seek_chapter(VideoState *is, int incr)
 }
 #endif
 
-static void informs_server_delete(char * server_addr, int fd) 
-{
-    char * pch;
-    char * address; 
-    char * port;
-    char buffer[100];
-    char cpy[100];
-    struct sockaddr_in server;
-
-    strcpy(cpy, server_addr);
-    pch = strtok (cpy, ":");
-    address = pch; 
-    pch = strtok (NULL, ":");
-    port = pch;
-    
-    bzero(&server, sizeof(server));
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = inet_addr(address);
-    server.sin_port = htons(atoi(port));
-
-    strcpy(buffer, "delete ");
-    strcpy(buffer+strlen(buffer), "SOURCE");
-    
-    if(sendto(fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
-    {
-        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
-        return;
-    }
-
-    av_log(NULL, AV_LOG_WARNING, "[Delete] inform server address %s:%s command %s\n", address, port, buffer);
-}
-
-
 static void inform_server_delete(char * server_addr, const char * stream) 
 {
     char * pch;
@@ -4072,8 +4038,6 @@ static void event_loop(VideoState *cur_stream[])
                 int i = 0;
                 av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d:%d required to be DELETEd\n", input_filename[index], index ,nb_input_files);
 
-                informs_server_delete(delete_server, SMT_FD[index]);
-
                 // first to hide the window to prevent the picture flutter 
                 SDL_HideWindow(window[index]);
 
@@ -4572,12 +4536,13 @@ static int handle_command(char * command)
 
             // do not send request from here.
             // for NAT punching.
+            char full_address[100];
+            char * port = strrchr(added_address,':') + 1;
             
-            //inform_server_add(added_server, added_address);
+            sprintf( full_address, "%s@%s", added_address, added_server, port);
             input_filename[nb_input_files+1] = av_strdup(added_address);
-            ext_inform_server = av_strdup(added_server);
             
-            global_is[nb_input_files+1] = stream_open(input_filename[nb_input_files+1], file_iformat);
+            global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
             if (!global_is[nb_input_files+1]) {
                 av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
                 do_all_exit(global_is);

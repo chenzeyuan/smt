@@ -286,7 +286,6 @@ long signalling_message_segment_append(signalling_message_buf_t *p_signalling_me
 int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
 int info_change(int id_new,int mpu_new);
 #endif
-extern char* ext_inform_server;
 extern int SMT_FD[SMT_MAX_DELIVERY_NUM];
 extern int nb_smt_fd;
 

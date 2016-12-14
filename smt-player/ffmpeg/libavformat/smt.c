@@ -99,6 +99,8 @@ typedef struct SMTContext {
 static unsigned int consumption_length = 0;
 static SMTContext * smtContext;
 static URLContext * smtH;
+static char remote_server[100];
+
 static struct SMT4AvLogExt info_av_log_ext = {0};
 #define NUMBER_SIZE 5000
 
@@ -148,6 +150,38 @@ static void inform_server_add(char * server_addr, int fd)
     }
 
     av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
+}
+
+static void informs_server_delete(char * server_addr, int fd) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    char cpy[100];
+    struct sockaddr_in server;
+
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "delete ");
+    strcpy(buffer+strlen(buffer), "SOURCE");
+    
+    if(sendto(fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Delete] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
 static void smt_on_get_mpu(URLContext *h, 
@@ -778,10 +812,9 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     SMT_FD[nb_smt_fd+1] = smt_fd;
     nb_smt_fd++;
 
-    if (ext_inform_server) {
-        inform_server_add(ext_inform_server, smt_fd);
-        ext_inform_server = 0;
-    }
+    sprintf(remote_server, "%s:%d", hostname, port);
+    inform_server_add(remote_server, smt_fd);
+
 
     s->send = NULL;
     s->receive = NULL;
@@ -904,6 +937,8 @@ static int smt_close(URLContext *h)
     time_t t = time(NULL);
     struct tm *tp = localtime(&t);
     av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
+
+    informs_server_delete(remote_server, s->smt_fd[0]);
 
     for(i = 0; i < s->smt_fd_size; i++) {
         if (s->is_multicast[i]) 

@@ -58,7 +58,6 @@ enum {
     INVALID_SIGNALLING_MESSAGE  = -7,
 };
 
-char* ext_inform_server = 0;
 int SMT_FD[SMT_MAX_DELIVERY_NUM];
 int nb_smt_fd = -1;
 
