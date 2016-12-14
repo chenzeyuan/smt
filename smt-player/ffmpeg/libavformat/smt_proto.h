@@ -24,6 +24,7 @@
 #define SMT_SIG_PAYLOAD_HEAD_LENGTH 2
 #define SMT_ID_PAYLOAD_HEAD_LENGTH 13
 #define SMT_SOURCE_FEC_PAYLOAD_ID_LENGTH 8
+#define SMT_MAX_DELIVERY_NUM    10
 
 #define MEDIA_TRACK_ID_OFFSET 1
 #define BUFFER_TIME 1000
@@ -278,6 +279,9 @@ smt_status smt_pack_signal(URLContext *h);
 long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length);
 int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
 int info_change(int id_new,int mpu_new);
+extern char* ext_inform_server;
+extern int SMT_FD[SMT_MAX_DELIVERY_NUM];
+extern int nb_smt_fd;
 
 #endif
 

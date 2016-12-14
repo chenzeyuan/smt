@@ -166,7 +166,7 @@ static void free_input_threads(void);
 #endif
 
 static pthread_t listening_tid;
-static int server_socket_fd ;
+extern int server_socket_fd ;
 extern int listening_port;  
 
 struct sockaddr_in client_addr; 
@@ -189,7 +189,7 @@ static void close_output_stream(OutputStream *ost)
     }
 }
 
-static int handle_command(char * command)
+static int handle_command(char * command, struct sockaddr_in client_addr)
 {
     char * pch;
     char * added_address; 
@@ -202,6 +202,23 @@ static int handle_command(char * command)
         pch = strtok (NULL, " ,-");
         delete_address = pch;
         av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELed\n", delete_address?delete_address:inet_ntoa(client_addr.sin_addr));
+
+        // NAT punching
+        if(strcmp(delete_address, "SOURCE") == 0)
+        {
+            char buffer[100];
+            strcpy(buffer, "smt://");
+            strcpy(buffer+strlen(buffer), inet_ntoa(client_addr.sin_addr));   
+            strcpy(buffer+strlen(buffer), ":");
+            sprintf(buffer+strlen(buffer), "%d", (int)ntohs(client_addr.sin_port));
+            av_log(NULL, AV_LOG_WARNING, "[Result] SOURCE address is changed to %s\n", buffer);
+            delete_address = av_strdup(buffer);
+
+            // Warning: server continue forwarding data to keep the session alive.
+            // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
+            // As the result, do NOT erase this sleep() for 2 seconds.
+            av_usleep(2000000);
+        }
 
         #if 0
         int i;
@@ -267,6 +284,17 @@ static int handle_command(char * command)
             av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be ADDed\n", added_address);
             printf("add");    
 
+            // NAT punching
+            if(strcmp(added_address, "SOURCE") == 0)
+            {
+                char buffer[100];
+                strcpy(buffer, "smt://");
+                strcpy(buffer+strlen(buffer), inet_ntoa(client_addr.sin_addr));   
+                strcpy(buffer+strlen(buffer), ":");
+                sprintf(buffer+strlen(buffer), "%d", (int)ntohs(client_addr.sin_port));
+                av_log(NULL, AV_LOG_WARNING, "[Result] SOURCE address is changed to %s\n", buffer);
+                added_address = av_strdup(buffer);
+            }
             #if 0
             int i;
             OptionsContext o;
@@ -362,9 +390,9 @@ static void *listening_read_thread(void *arg)
          if(strlen(command) == 0)
             continue;
 
-         av_log(NULL, AV_LOG_INFO, "[command] receive: [%s] from address %s\n", command, inet_ntoa(client_addr.sin_addr));
+         av_log(NULL, AV_LOG_INFO, "[command] receive: [%s] from address %s:%d\n", command, inet_ntoa(client_addr.sin_addr), (int) ntohs(client_addr.sin_port));
 
-         handle_command(command);
+         handle_command(command, client_addr);
 
     }
     return;

@@ -97,13 +97,13 @@ typedef struct SMTContext {
 } SMTContext;
 
 static unsigned int consumption_length = 0;
-
-
 static SMTContext * smtContext;
 static URLContext * smtH;
 
+
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
+int server_socket_fd = -1 ;
 
 
 static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t count) {
@@ -114,6 +114,38 @@ static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t 
     int64_t tmp = s->mpu_lost_counter[packet_id];
     s->mpu_lost_counter[packet_id] += count;
     return tmp;
+}
+
+static void inform_server_add(char * server_addr, int fd) 
+{
+    char * pch;
+    char * address; 
+    char * port;
+    char buffer[100];
+    char cpy[100];
+    struct sockaddr_in server;
+
+    strcpy(cpy, server_addr);
+    pch = strtok (cpy, ":");
+    address = pch; 
+    pch = strtok (NULL, ":");
+    port = pch;
+    
+    bzero(&server, sizeof(server));
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(address);
+    server.sin_port = htons(atoi(port));
+
+    strcpy(buffer, "add ");
+    strcpy(buffer+strlen(buffer), "SOURCE");
+    
+    if(sendto(fd, buffer, 100,0,(struct sockaddr*)&server,sizeof(server)) < 0)
+    {
+        av_log(NULL, AV_LOG_WARNING, "[ERROR!!] inform server address %s failed\n", address);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "[Add] inform server address %s:%s command %s\n", address, port, buffer);
 }
 
 static void smt_on_get_mpu(URLContext *h, 
@@ -365,9 +397,20 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
             //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
-            ret = sendto (s->smt_fd[i], buf, len, 0,
-                          (struct sockaddr *) &s->dest_addr[i],
-                          s->dest_addr_len[i]);
+
+
+             // TODO: liminghao smt_fd[] is not used for hole punching
+            if(server_socket_fd != -1) {
+                ret = sendto (server_socket_fd, buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+            else {
+                ret = sendto (s->smt_fd[i], buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+                
         } else {
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
@@ -720,10 +763,20 @@ static int smt_open(URLContext *h, const char *uri, int flags)
         log_net_error(h, AV_LOG_WARNING, "setsockopt(SO_RECVBUF)");
     }
 
+
     s->smt_fd[0] = smt_fd;
     s->smt_fd_size = 1;
+    
     smtContext = s;
     smtH = h;
+
+    SMT_FD[nb_smt_fd+1] = smt_fd;
+    nb_smt_fd++;
+
+    if (ext_inform_server) {
+        inform_server_add(ext_inform_server, smt_fd);
+        ext_inform_server = 0;
+    }
 
     s->send = NULL;
     s->receive = NULL;
@@ -846,6 +899,7 @@ static int smt_close(URLContext *h)
     time_t t = time(NULL);
     struct tm *tp = localtime(&t);
     av_log(h, AV_LOG_INFO, "smt socket close at: %d:%d:%d\n", tp->tm_hour, tp->tm_min, tp->tm_sec);
+
     for(i = 0; i < s->smt_fd_size; i++) {
         if (s->is_multicast[i]) 
             smt_leave_multicast_group(s->smt_fd[i], (struct sockaddr *)&s->dest_addr[i],(struct sockaddr *)&s->local_addr_storage[i]);
@@ -1062,6 +1116,7 @@ int smt_add_delivery_url(const char *uri)
 
     smtContext->smt_fd[smtContext->smt_fd_size] = smt_fd;
     smtContext->smt_fd_size++;
+
     return 1;
 }
 
@@ -1080,11 +1135,13 @@ int smt_del_delivery_url(const char *uri)
     for(i = 1; i < smtContext->smt_fd_size; i++)
     {    
         struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
-        av_log(NULL, AV_LOG_INFO, "try to del %s with %s \n", uri, inet_ntoa(dest_addr->sin_addr));
-        if(!strstr(uri, inet_ntoa(dest_addr->sin_addr)))
+        char addr_buf[100];
+        sprintf(addr_buf, "%s:%d", inet_ntoa(dest_addr->sin_addr), (int)ntohs(dest_addr->sin_port));
+        av_log(NULL, AV_LOG_WARNING, "try to del %s with %s, total: %d \n", uri, addr_buf, smtContext->smt_fd_size);
+        if(!strcmp(uri, addr_buf))
             continue;
         
-        av_log(NULL, AV_LOG_INFO, "found try to del %s \n", inet_ntoa(dest_addr->sin_addr));
+        av_log(NULL, AV_LOG_WARNING, "found try to del %s on slot %d \n", inet_ntoa(dest_addr->sin_addr), i);
         if (smtContext->is_multicast[i]) 
             smt_leave_multicast_group(smtContext->smt_fd[i], (struct sockaddr *)&smtContext->dest_addr[i],(struct sockaddr *)&smtContext->local_addr_storage[i]);
         closesocket(smtContext->smt_fd[i]);

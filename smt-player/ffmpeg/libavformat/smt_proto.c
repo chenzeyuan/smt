@@ -56,6 +56,11 @@ enum {
     INVALID_SIGNALLING_MESSAGE  = -7,
 };
 
+char* ext_inform_server = 0;
+int SMT_FD[SMT_MAX_DELIVERY_NUM];
+int nb_smt_fd = -1;
+
+
 //add for test
 static void print_all(smt_payload_sig * sig){
         printf("--------------------------lalalalalal----------------------------------------------------\n");
@@ -489,7 +494,8 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
-                    //av_log(h, AV_LOG_INFO, "get packet number = %d\n",p->packet_sequence_number);
+                    //int64_t now_time_us =  av_gettime();
+                    //av_log(h, AV_LOG_INFO, "get packet number = %d, delay is %d \n",p->packet_sequence_number, now_time_us - p->timestamp);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
 #if !defined(__ANDROID__)
 
@@ -507,8 +513,6 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
 
                     }
                     smt_callback_entity.set_last_packet_counter(h, p->packet_counter);
-
-
 #endif                    
                     recv->process_position += 16;
                     recv->packet_parse_phase = SMT_PARSE_PACKET_HEADER_EXTENSION;
@@ -1140,9 +1144,6 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                 mpu->sequence = pld_f->MPU_sequence_number;
                 iterator = recv->mpu_head[asset_id];//get first smt packet of the mpu
                 unsigned int timestamp_of_first_packet = iterator->timestamp;
-
-                
-                
 
                 ret = smt_assemble_mpu(h, recv, asset_id, mpu);
                 if(ret != SMT_STATUS_OK){
