@@ -99,6 +99,8 @@ typedef struct SMTContext {
 static unsigned int consumption_length = 0;
 static SMTContext * smtContext;
 static URLContext * smtH;
+static struct SMT4AvLogExt info_av_log_ext = {0};
+#define NUMBER_SIZE 5000
 
 
 int smt_add_delivery_url(const char *uri);
@@ -322,7 +324,6 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
 }
 
 #define MAX_BPS  (25 * 1024 * 1024)
-#define NUMBER_SIZE 1000
 static void send_socket_cache(Queue *q) {
 
     void *buf = NULL;
@@ -333,7 +334,6 @@ static void send_socket_cache(Queue *q) {
     delay_time -= 60;  //subtract program processing time
     delay_time = delay_time < 1? 1:delay_time;
     while(1) {
-        static struct SMT4AvLogExt info_av_log_ext = {0};
         int len = Dequeue(q, &buf);
         if(NULL == buf) continue;
 
@@ -348,7 +348,8 @@ static void send_socket_cache(Queue *q) {
                 if(s->smt_fd[i] == NULL) continue;
                 ret = send(s->smt_fd[i], buf, len, 0);
             }
-            smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
+            //smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
+            smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE);
       }
       av_usleep(delay_time);
       free(buf);
@@ -415,7 +416,8 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
             if(s->smt_fd[i] == NULL) continue;
             ret = send(s->smt_fd[i], buf, len, 0);
         }
-        smt_calc_rate(&s->info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
+        //smt_calc_rate(&info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
+        smt_calc_rate(&info_av_log_ext, h->filename, len, NUMBER_SIZE);
     }
     av_usleep(50);
 #endif
