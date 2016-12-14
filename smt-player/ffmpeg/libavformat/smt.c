@@ -308,16 +308,19 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
     char* device = NULL;
     if(0 == info->send_counter) {
         info->start_time = av_gettime();
-    } else if( number_size <= info->send_counter) {
+    } else {
         int64_t end_time = av_gettime();
-        float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
-        device = get_av_log_device_info();
-        if(!device) device = "none";
-        av_log_ext(NULL, AV_LOG_INFO, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", device, filename, end_time, rate);
-        info->start_time = 0;
-        info->send_counter = 0;
-        info->len_sum = 0;
-        return;
+        int64_t diff_time = end_time - info->start_time; 
+        if( diff_time >= 500 * 1000 || number_size <= info->send_counter) {
+            float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
+            device = get_av_log_device_info();
+            if(!device) device = "none";
+            av_log_ext(NULL, AV_LOG_INFO, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"bitrate\":\"%f\"}\n", device, filename, end_time, rate);
+            info->start_time = 0;
+            info->send_counter = 0;
+            info->len_sum = 0;
+            return;
+        }
     }
     info->len_sum += len;
     info->send_counter++;
