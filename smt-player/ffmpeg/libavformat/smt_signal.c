@@ -1,3 +1,4 @@
+#ifdef SMT_PROTOCAL_SIGNAL
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -1361,3 +1362,5 @@ int get_mp_table_length(mp_table_t *mp_table)
     }
     return table_length;
 }
+
+#endif// SMT_PROTOCAL_SIGNAL

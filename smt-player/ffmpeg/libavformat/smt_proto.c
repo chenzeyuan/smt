@@ -1,5 +1,7 @@
 #include "smt_proto.h"
+#ifdef SMT_PROTOCAL_SIGNAL
 #include "smt_signal.h"
+#endif
 #include "avformat.h"
 #include "libavutil/avassert.h"
 #include "libavutil/time.h"
@@ -1254,6 +1256,8 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
 
 }
 
+
+#ifdef SMT_PROTOCAL_SIGNAL
 long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length) {
     if(!p_signalling_message) return INVALID_SIGNALLING_MESSAGE;
     if(!data) return INVALID_DATA;
@@ -1374,12 +1378,18 @@ int id_change(edit_list_t edit_list_id,int id_new,int mpu_new)
     return 0;
 }
 // -----------------function edit_list-----------------
+#endif
+
 static smt_status smt_add_packet(URLContext *h, smt_receive_entity *recv, smt_packet *p)
 {
     smt_status ret = SMT_STATUS_OK;
     int pkt_id = p->packet_id;
     smt_payload_type tp = p->type;
-    if(pkt_id >= MAX_ASSET_NUMBER && pkt_id != Signal_PACKET_ID){
+    if(pkt_id >= MAX_ASSET_NUMBER 
+#ifdef SMT_PROTOCAL_SIGNAL
+            && pkt_id != Signal_PACKET_ID
+#endif
+            ){
         printf("error!\n");
         av_log(h, AV_LOG_ERROR, "current asset number is %d, which is bigger than MAX_ASSET_NUMBER!\n", pkt_id);
         recv->packet_parser_status = SMT_STATUS_INIT;
@@ -1393,7 +1403,9 @@ static smt_status smt_add_packet(URLContext *h, smt_receive_entity *recv, smt_pa
         case gfd_payload:
             break;
         case sig_payload:
+#ifdef SMT_PROTOCAL_SIGNAL
             ret = smt_add_sig_packet(h, recv, p);
+#endif
             break;
         case repair_symbol_payload:
             break;
@@ -1740,10 +1752,12 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
 	return SMT_STATUS_OK;
 }
 
+#ifdef SMT_PROTOCAL_SIGNAL
 smt_status smt_pack_signal(URLContext *h)
 {
     generate_and_send_signal(h);
     return SMT_STATUS_OK;
 }
+#endif
 
 

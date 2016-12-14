@@ -8,7 +8,9 @@
 #include "network.h"
 #include <stdbool.h>
 #include "url.h"
+#ifdef SMT_PROTOCAL_SIGNAL
 #include "smt_signal.h"
+#endif
 
 
 #define MTU 1452     //ip 20 + udp 8 + mtp 1452 = 1480      1500
@@ -211,10 +213,7 @@ typedef struct mpu {
     struct mpu      *next;
 } smt_mpu;
 
-// typedef struct sig {
-//     unsigned char*	sample_data;
-// 	unsigned int	sample_length;
-// } smt_sig;
+#ifdef SMT_PROTOCAL_SIGNAL
 typedef struct sig {
     u_int16_t message_id;
     u_int8_t version;
@@ -225,6 +224,12 @@ typedef struct sig {
     mp_table_t mp_table;
     mpi_table_t mpi_table;
 } smt_sig;
+#else
+typedef struct sig {
+    unsigned char * sample_data;
+    unsigned int    sample_length;
+} smt_sig;
+#endif
 
 typedef struct gfd {
     unsigned char*	sample_data;
@@ -275,10 +280,12 @@ typedef struct smt_send_entity{
 smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size);
 void smt_release_mpu(URLContext *h, smt_mpu *mpu);
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length);
+#ifdef SMT_PROTOCAL_SIGNAL
 smt_status smt_pack_signal(URLContext *h);
 long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length);
 int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
 int info_change(int id_new,int mpu_new);
+#endif
 extern char* ext_inform_server;
 extern int SMT_FD[SMT_MAX_DELIVERY_NUM];
 extern int nb_smt_fd;
