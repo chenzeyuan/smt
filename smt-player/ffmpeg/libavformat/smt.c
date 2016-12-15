@@ -109,6 +109,20 @@ int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
 int server_socket_fd = -1 ;
 
+static int count_colon(char *str)
+{
+    char *p = str;
+    int cnt = 0;
+ 
+    while (*p != '\0') {
+        if (*p == ':') {
+            cnt++;
+        }
+        p++;
+    } 
+    return cnt;
+}
+
 
 static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t count) {
     if(!h || !h->priv_data) return 0;
@@ -812,8 +826,10 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     SMT_FD[nb_smt_fd+1] = smt_fd;
     nb_smt_fd++;
 
-    sprintf(s->remote_server, "%s:%d", hostname, port);
-    inform_server_add(s->remote_server, smt_fd);
+    if(count_colon(uri) == 3) {
+        sprintf(s->remote_server, "%s:%d", hostname, port);
+        inform_server_add(s->remote_server, smt_fd);
+    }
 
 
     s->send = NULL;
