@@ -114,6 +114,7 @@ int frame_bits_per_raw_sample = 0;
 float max_error_rate  = 2.0/3;
 extern int64_t ffmpeg_begin_time;
 extern int64_t diff_time;
+extern int smt_bitrate;
 
 static int intra_only         = 0;
 static int file_overwrite     = 0;
@@ -587,6 +588,12 @@ static int opt_recording_timestamp(void *optctx, const char *opt, const char *ar
     return 0;
 }
 
+static int opt_smtbitrate(void *optctx, const char *opt, const char *arg)
+{
+    if(!arg) return 0;
+    smt_bitrate = atoi(arg);
+    return 0;    
+}
 static int opt_begintime(void *optctx, const char *opt, const char *arg)
 {
     av_log(NULL, AV_LOG_INFO, "[%s:%d] <<smt>>  \n", __FILE__, __LINE__);
@@ -3191,6 +3198,8 @@ const OptionDef options[] = {
         "set the recording timestamp ('now' to set the current time)", "time" },
     { "begintime",      HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_begintime },
         "set the begintime of smt ,example1: 2016-7-15T10:03:51.353 ,  example2:d1200 ( means delay 1200ms)", "time" },
+    { "smtbitrate",     HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_smtbitrate },
+        "set smt bitrate", "time" },
     { "metadata",       HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(metadata) },
         "add metadata", "string=string" },
     { "program",        HAS_ARG | OPT_STRING | OPT_SPEC | OPT_OUTPUT, { .off = OFFSET(program) },

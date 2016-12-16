@@ -102,12 +102,13 @@ static SMTContext * smtContext;
 static URLContext * smtH;
 
 static struct SMT4AvLogExt info_av_log_ext = {0};
-#define NUMBER_SIZE 5000
+#define NUMBER_SIZE 5000000
 
 
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
 int server_socket_fd = -1 ;
+int smt_bitrate = 0;
 
 static int count_colon(char *str)
 {
@@ -359,7 +360,7 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
     } else {
         int64_t end_time = av_gettime();
         int64_t diff_time = end_time - info->start_time; 
-        if( diff_time >= 500 * 1000 || number_size <= info->send_counter) {
+        if( diff_time >= 100 * 1000 || number_size <= info->send_counter) {
             float rate = info->len_sum * 8 * 1.0f * 1000 * 1000 / (1024 * 1024 * ( end_time - info->start_time));
             device = get_av_log_device_info();
             if(!device) device = "none";
@@ -375,35 +376,47 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
 }
 
 #define MAX_BPS  (25 * 1024 * 1024)
+#define MAX_DELAY (MTU * 8 * 1E6) / (500 * 1024)   // 500K bps     11077us
+#define MIN_DELAY (MTU * 8 * 1E6) / (25 * 1024 * 1024)  // 25M bps    443us
+#define DEFAUT_SMT_BITRATE (20 * 1024)      // unit is Kbps
 static void send_socket_cache(Queue *q) {
 
     void *buf = NULL;
     int ret;
-    int delay_time = 1; //
+    int delay_time = 0; //
     SMTContext *s = q->h->priv_data;
-    delay_time =  MTU * 8 * 1E6 / MAX_BPS;
-    delay_time -= 60;  //subtract program processing time
-    delay_time = delay_time < 1? 1:delay_time;
+    if(0 == smt_bitrate) smt_bitrate = DEFAUT_SMT_BITRATE;      
+    delay_time =(MTU * 8 * 1E6) / (smt_bitrate  * 1024 * 12 /10);
+    delay_time -= 100;  //subtract program processing time
+    delay_time  = delay_time>MAX_DELAY?MAX_DELAY:delay_time;       
+    delay_time  = delay_time<MIN_DELAY?MIN_DELAY:delay_time;       
+
     while(1) {
         int len = Dequeue(q, &buf);
         if(NULL == buf) continue;
-
         for(int i = 0 ; i < s->smt_fd_size; i++) {
             if (!s->is_connected) {
                 if(s->smt_fd[i] == NULL) continue;
                 struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-                ret = sendto (s->smt_fd[i], buf, len, 0,
-                        (struct sockaddr *) &s->dest_addr[i],
-                        s->dest_addr_len[i]);
+                if(server_socket_fd != -1) {
+                    ret = sendto (server_socket_fd, buf, len, 0,
+                            (struct sockaddr *) &s->dest_addr[i],
+                            s->dest_addr_len[i]);
+                }
+                else {
+                    ret = sendto (s->smt_fd[i], buf, len, 0,
+                            (struct sockaddr *) &s->dest_addr[i],
+                            s->dest_addr_len[i]);
+                }
             } else {
                 if(s->smt_fd[i] == NULL) continue;
                 ret = send(s->smt_fd[i], buf, len, 0);
             }
             //smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
             smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE);
-      }
-      av_usleep(delay_time);
-      free(buf);
+        }
+        av_usleep(delay_time);
+        free(buf);
     }
 }
 
@@ -429,7 +442,7 @@ static void set_socket_cache_queue(URLContext *h) {
 
 /* ----------------------------------------------*/
 
-//#define SMT_OUTPUT_CACHE_CONTROL
+#define SMT_OUTPUT_CACHE_CONTROL
 static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 {
     SMTContext *s = h->priv_data;
