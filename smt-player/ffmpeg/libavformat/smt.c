@@ -216,7 +216,7 @@ static void smt_on_get_mpu(URLContext *h,
         } else {
             s->mpu_duration[mpu->asset] = (4 * s->mpu_duration[mpu->asset] + temp * 1000 / mpu->timescale + 1)/5;
         }
-        av_log(NULL, AV_LOG_INFO, "\n mpu_duration[%d]=%lld\n", mpu->asset,  s->mpu_duration[mpu->asset]);
+        //av_log(NULL, AV_LOG_INFO, "\n mpu_duration[%d]=%lld\n", mpu->asset,  s->mpu_duration[mpu->asset]);
     }
     s->media_duration[mpu->asset] = mpu->media_duration;
 
@@ -226,8 +226,8 @@ static void smt_on_get_mpu(URLContext *h,
     }
 
     s->mpu_sequence_number[mpu->asset] = mpu->sequence;    
-    av_log(NULL, AV_LOG_INFO, "\n on get mpu, asset=%d, sequence=%d, duration=%lld, timescale=%ld\n", 
-                                     mpu->asset,  mpu->sequence, mpu->media_duration, mpu->timescale);
+    //av_log(NULL, AV_LOG_INFO, "\n on get mpu, asset=%d, sequence=%d, duration=%lld, timescale=%ld\n", 
+    //                                 mpu->asset,  mpu->sequence, mpu->media_duration, mpu->timescale);
 
     int free_space_in_fifo;
     //if(!mpu->asset)
@@ -293,6 +293,7 @@ static void smt_on_get_id(URLContext *h, smt_sig *sig)
 typedef struct SeqQueue {
     char  *data[CACHE_SIZE];
     int   len[CACHE_SIZE];
+    int   type[CACHE_SIZE]; //0:mmtp  0x20:net_state,for test delay
     int   front;
     int   rear;
     pthread_mutex_t q_lock;
@@ -352,8 +353,20 @@ static int Dequeue(Queue *q, void **data) {
     pthread_mutex_unlock(&q->q_lock);
     return len;
 }
+#ifdef SMT_NET_STATE
+#define NET_STATE_REPORT_DEALY_INTERVAL   500   //unit milisecond
+static int smt_send_net_state(SMTContext *s, unsigned char** buf) {
+    static int64_t net_state_send_time = 0;
+    int64_t now_time = av_gettime();
+    if(now_time - net_state_send_time < NET_STATE_REPORT_DEALY_INTERVAL * 1000) {
+        return 0;
+    } 
+    net_state_send_time  = now_time;
+    return smt_pack_net_state(buf);
+}
+#endif
 
-static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, int number_size) {
+static float smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, int number_size) {
     char* device = NULL;
     if(0 == info->send_counter) {
         info->start_time = av_gettime();
@@ -368,11 +381,12 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
             info->start_time = 0;
             info->send_counter = 0;
             info->len_sum = 0;
-            return;
+            return rate;
         }
     }
     info->len_sum += len;
     info->send_counter++;
+    return -1;
 }
 
 #define MAX_BPS  (25 * 1024 * 1024)
@@ -381,7 +395,7 @@ static void smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, in
 #define DEFAUT_SMT_BITRATE (20 * 1024)      // unit is Kbps
 static void send_socket_cache(Queue *q) {
 
-    void *buf = NULL;
+    unsigned char* buf = NULL;
     int ret;
     int delay_time = 0; //
     SMTContext *s = q->h->priv_data;
@@ -392,7 +406,15 @@ static void send_socket_cache(Queue *q) {
     delay_time  = delay_time<MIN_DELAY?MIN_DELAY:delay_time;       
 
     while(1) {
-        int len = Dequeue(q, &buf);
+#ifdef SMT_NET_STATE
+        int len = smt_send_net_state(s, &buf);
+        if(len > 0) {
+        }
+        else
+#endif
+		{
+            len = Dequeue(q, &buf);
+        }
         if(NULL == buf) continue;
         for(int i = 0 ; i < s->smt_fd_size; i++) {
             if (!s->is_connected) {
@@ -416,7 +438,6 @@ static void send_socket_cache(Queue *q) {
             smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE);
         }
         av_usleep(delay_time);
-        free(buf);
     }
 }
 
@@ -449,7 +470,6 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
     int ret;
     int i;
 
-    //av_log(NULL, AV_LOG_INFO, "sending data to %d clients\n", s->smt_fd_size);
 #ifdef SMT_OUTPUT_CACHE_CONTROL
     set_socket_cache_queue(h);
     void *data = malloc(len);

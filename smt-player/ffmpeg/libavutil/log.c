@@ -543,7 +543,11 @@ void set_av_log_device_info(char* info) {
 }
 
 char* get_av_log_device_info(void) {
-    return device_information; 
+    if(device_information) {
+        return device_information; 
+    }else {
+        return "none";
+    }
 }
 
 

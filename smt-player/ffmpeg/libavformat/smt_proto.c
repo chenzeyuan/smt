@@ -1195,8 +1195,8 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         int64_t todaytime = now_time_us - time_zero_us;
                         //int64_t delay = now_time_us - cur_begin_time_value * 1000;
                         int64_t delay = now_time_us - time_zero_us -  (int64_t)p->timestamp * 1000;
+#if 0
                         device = get_av_log_device_info();
-                        if(!device) device = "none";
                         av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
                                 device,
                                 h->filename, 
@@ -1206,7 +1206,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                 p->packet_id,
                                 p->packet_sequence_number,
                                 p->packet_counter );
-
+#endif
 
                     }
 
@@ -1485,6 +1485,34 @@ smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buf
 
     if(!buffer || !size)
         return SMT_STATUS_INVALID_INPUT;
+#ifdef SMT_NET_STATE		
+    /* for delay infomation */
+    if(buffer[3] == 8) {
+        int64_t send_time = 0;
+        char* device = NULL;
+        send_time = (int64_t)buffer[16] << 56 | 
+                    (int64_t)buffer[17] << 48 | 
+                    (int64_t)buffer[18] << 40 |
+                    (int64_t)buffer[19] << 32 |
+                    (int64_t)buffer[20] << 24 | 
+                    (int64_t)buffer[21] << 16 | 
+                    (int64_t)buffer[22] << 8  |
+                    (int64_t)buffer[23];
+        int64_t delay = av_gettime() - send_time;
+        char fname[128] = {0};
+        memcpy(fname, &(buffer[24]), 128);
+        device = get_av_log_device_info();
+        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"delay\":\"%lld\",\"from\":\"%s\"}\n", 
+                device,
+                h->filename, 
+                av_gettime(), 
+                delay,
+                fname);
+
+        
+        return SMT_STATUS_INVALID_INPUT;
+    }
+#endif
 
     if(!recv->stack_init){
         recv->stack_init = true;
@@ -1572,6 +1600,67 @@ void smt_release_mpu(URLContext *h, smt_mpu *mpu)
 */
     av_freep(&mpu);
 }
+#ifdef SMT_NET_STATE
+#define SERVER_NAME_LEN (127)
+unsigned char  net_state_buffer[MTU] = {0};
+int smt_pack_net_state(unsigned char** outbuffer) {
+    unsigned char* buffer = net_state_buffer;
+    *outbuffer = net_state_buffer;
+
+	smt_payload_netstate *pld = NULL;
+    smt_packet *pkt = NULL;
+    int64_t now_time = av_gettime();
+
+
+	//initialization
+	pkt = (smt_packet *)av_mallocz(sizeof(smt_packet));
+	pkt->V = 0;
+	pkt->C = 1;
+	pkt->FEC = no_fec;
+	pkt->r = 0;
+	pkt->X = 0;
+	pkt->R = 0;
+	pkt->RES = 0;
+	pkt->type = net_state;
+    pkt->packet_id = 8;
+    pld = (smt_payload_netstate *)&(pkt->payload);
+    pld->delivery_time = now_time;
+    
+    memset(buffer, 0, sizeof(unsigned char) * MTU);
+    buffer[0] = (pkt->R&0x01) | (pkt->X&0x01) << 1 | (pkt->r&0x01) << 2 | (pkt->FEC&0x03) << 3 | (pkt->C&0x01) << 5 | (pkt->V&0x03) << 6;
+    buffer[1] = (pkt->type&0x3f) | (pkt->RES&0x03)<<6;
+	buffer[2] = (unsigned char)(pkt->packet_id >> 8);
+	buffer[3] = (unsigned char)(pkt->packet_id);
+	buffer[4] = (unsigned char)(pkt->timestamp >> 24);
+	buffer[5] = (unsigned char)(pkt->timestamp >> 16); 
+	buffer[6] = (unsigned char)(pkt->timestamp >> 8); 
+	buffer[7] = (unsigned char)(pkt->timestamp);
+	buffer[8] = (unsigned char)(pkt->packet_sequence_number >> 24);
+	buffer[9] = (unsigned char)(pkt->packet_sequence_number >> 16); 
+	buffer[10] = (unsigned char)(pkt->packet_sequence_number >> 8); 
+	buffer[11] = (unsigned char)(pkt->packet_sequence_number);
+	buffer[12] = (unsigned char)(pkt->packet_counter >> 24);
+	buffer[13] = (unsigned char)(pkt->packet_counter >> 16); 
+	buffer[14] = (unsigned char)(pkt->packet_counter >> 8); 
+	buffer[15] = (unsigned char)(pkt->packet_counter);
+
+    buffer[16] = (unsigned char)((0xff00000000000000 & pld->delivery_time) >> 56);
+    buffer[17] = (unsigned char)((0x00ff000000000000 & pld->delivery_time) >> 48);
+    buffer[18] = (unsigned char)((0x0000ff0000000000 & pld->delivery_time) >> 40);
+    buffer[19] = (unsigned char)((0x000000ff00000000 & pld->delivery_time) >> 32);
+    buffer[20] = (unsigned char)((0x00000000ff000000 & pld->delivery_time) >> 24);
+    buffer[21] = (unsigned char)((0x0000000000ff0000 & pld->delivery_time) >> 16);
+    buffer[22] = (unsigned char)((0x000000000000ff00 & pld->delivery_time) >> 8);
+    buffer[23] = (unsigned char)((0x00000000000000ff & pld->delivery_time) );
+    
+    char* device_info = get_av_log_device_info();
+    int   device_info_len = strlen(device_info) > SERVER_NAME_LEN?SERVER_NAME_LEN+1:strlen(device_info)+1 ;
+    memcpy(&(buffer[24]), device_info, device_info_len);
+    av_free(pkt);
+    return SERVER_NAME_LEN+24;
+}
+#endif
+
 
 
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length)
@@ -1682,6 +1771,7 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         //time_t t;
         //time(&t);
 		/* time_displacement is used for delay calculate in infomation server */
+#if 0        
         static int log_time_displacement_count = 0;
         if( 0 == log_time_displacement_count) {
             char* device = NULL;
@@ -1694,7 +1784,7 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
                     diffdiff);
         } 
         log_time_displacement_count = (log_time_displacement_count>=5000)?0:(log_time_displacement_count+1);
-
+#endif
         pkt->timestamp =  ffmpeg_begin_time + (now_time - first_time)/1000 ;
 		smt_assemble_packet_header(h, snd, pld->data, pkt);
 

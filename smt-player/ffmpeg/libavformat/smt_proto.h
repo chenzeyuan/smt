@@ -32,7 +32,7 @@
 #define BUFFER_TIME 1000
 
 #define FIXED_UDP_LEN
-
+#define SMT_NET_STATE
 
 #define EDIT_LIST_NUM 2
 
@@ -47,7 +47,10 @@ typedef enum payload_type{
     mpu_payload = 0,
     gfd_payload,
     sig_payload,
-    repair_symbol_payload
+    repair_symbol_payload,
+#ifdef SMT_NET_STATE
+    net_state   = 0x20
+#endif
 } smt_payload_type;
 
 typedef enum fragment_type{
@@ -108,6 +111,15 @@ typedef struct payload_sig {
     unsigned char*                  data;
     unsigned int                    data_len;
 } smt_payload_sig;
+
+#ifdef SMT_NET_STATE
+typedef struct payload_netstate {
+    int64_t                         delivery_time;
+    unsigned char                   device_info[128];
+    unsigned char*                  data;
+    unsigned int                    data_len;
+} smt_payload_netstate;
+#endif
 
 typedef struct payload_id {
     unsigned int                    SS_start;
@@ -280,6 +292,9 @@ typedef struct smt_send_entity{
 smt_status smt_parse(URLContext *h, smt_receive_entity *recv, unsigned char* buffer, int *p_size);
 void smt_release_mpu(URLContext *h, smt_mpu *mpu);
 smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buffer, int length);
+#ifdef SMT_NET_STATE
+int smt_pack_net_state(unsigned char** buffer);
+#endif
 #ifdef SMT_PROTOCAL_SIGNAL
 smt_status smt_pack_signal(URLContext *h);
 long signalling_message_segment_append(signalling_message_buf_t *p_signalling_message, void *data,  u_int32_t length);
