@@ -418,8 +418,9 @@ static void send_socket_cache(Queue *q) {
         if(NULL == buf) continue;
         for(int i = 0 ; i < s->smt_fd_size; i++) {
             if (!s->is_connected) {
-                if(s->smt_fd[i] == NULL) continue;
                 struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
+                if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
+
                 if(server_socket_fd != -1) {
                     ret = sendto (server_socket_fd, buf, len, 0,
                             (struct sockaddr *) &s->dest_addr[i],
@@ -478,10 +479,9 @@ static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
 #else
     for(i = 0 ; i < s->smt_fd_size; i++) {
         if (!s->is_connected) {
-            if(s->smt_fd[i] == NULL) continue;
-
             struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-            //av_log(NULL, AV_LOG_INFO, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
+            //av_log(NULL, AV_LOG_WARNING, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
+            if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
 
 
              // TODO: liminghao smt_fd[] is not used for hole punching
