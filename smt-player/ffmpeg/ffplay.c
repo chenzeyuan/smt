@@ -1820,11 +1820,12 @@ static double compute_target_delay(double delay, VideoState *is)
         /* if video is slave, we try to correct big delays by
            duplicating or deleting a frame */
         diff = get_clock(&is->vidclk) - get_master_clock(is, 1);
-
+/*
         double mclock = get_master_clock(is, 0);
         if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK && !isnan(mclock) && mclock < 0) {
             av_usleep((int)(-mclock * 1000000));
         }
+ */
         /* skip or repeat frame. We take into account the
            delay to compute the threshold. I still don't know
            if it is the best guess */
@@ -2546,11 +2547,12 @@ static int synchronize_audio(VideoState *is, int nb_samples)
         double diff, avg_diff, adjust;
         int min_nb_samples, max_nb_samples;
 
-
+/*
         double mclock = get_master_clock(is, 0);
         if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK && !isnan(mclock) && mclock < 0) {
             av_usleep((int)(-mclock * 1000000));
         }
+*/
         diff = get_clock(&is->audclk) - get_master_clock(is, 0);
 
         if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD) {
