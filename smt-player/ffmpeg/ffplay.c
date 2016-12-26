@@ -91,10 +91,10 @@ extern int64_t begin_time;
 /* If a frame duration is longer than this, it will not be duplicated to compensate AV sync */
 #define AV_SYNC_FRAMEDUP_THRESHOLD 0.1
 /* no AV correction is done if too big error */
-#define AV_NOSYNC_THRESHOLD 15.0
+#define AV_NOSYNC_THRESHOLD 10
 
 /* maximum audio speed change to get correct sync */
-#define SAMPLE_CORRECTION_PERCENT_MAX 20
+#define SAMPLE_CORRECTION_PERCENT_MAX 30 
 
 /* external clock speed adjustment constants for realtime sources based on buffer fullness */
 //#define EXTERNAL_CLOCK_SPEED_MIN  0.900
@@ -1821,6 +1821,10 @@ static double compute_target_delay(double delay, VideoState *is)
            duplicating or deleting a frame */
         diff = get_clock(&is->vidclk) - get_master_clock(is, 1);
 
+        double mclock = get_master_clock(is, 0);
+        if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK && !isnan(mclock) && mclock < 0) {
+            av_usleep((int)(-mclock * 1000000));
+        }
         /* skip or repeat frame. We take into account the
            delay to compute the threshold. I still don't know
            if it is the best guess */
@@ -2539,9 +2543,14 @@ static int synchronize_audio(VideoState *is, int nb_samples)
 
     /* if not master, then we try to remove or add samples to correct the clock */
     if (get_master_sync_type(is) != AV_SYNC_AUDIO_MASTER) {
-        double diff, avg_diff;
+        double diff, avg_diff, adjust;
         int min_nb_samples, max_nb_samples;
 
+
+        double mclock = get_master_clock(is, 0);
+        if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK && !isnan(mclock) && mclock < 0) {
+            av_usleep((int)(-mclock * 1000000));
+        }
         diff = get_clock(&is->audclk) - get_master_clock(is, 0);
 
         if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD) {
@@ -2554,7 +2563,14 @@ static int synchronize_audio(VideoState *is, int nb_samples)
                 avg_diff = is->audio_diff_cum * (1.0 - is->audio_diff_avg_coef);
 
                 if (fabs(avg_diff) >= is->audio_diff_threshold) {
-                    wanted_nb_samples = nb_samples + (int)(diff * is->audio_src.freq);
+                    if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK) {
+                        adjust = diff * is->audio_src.freq * diff * is->audio_src.freq;
+                        adjust = diff > 0?adjust:-adjust;
+                        adjust = adjust / (400* nb_samples);
+                    }else {
+                        adjust = diff * is->audio_src.freq ;
+                    }
+                    wanted_nb_samples = nb_samples + (int)(adjust );
                     min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     wanted_nb_samples = av_clip(wanted_nb_samples, min_nb_samples, max_nb_samples);
@@ -2926,6 +2942,10 @@ static int stream_component_open(VideoState *is, int stream_index)
         /* since we do not have a precise anough audio fifo fullness,
            we correct audio sync only if larger than this threshold */
         is->audio_diff_threshold = (double)(is->audio_hw_buf_size) / is->audio_tgt.bytes_per_sec;
+
+        if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK) {
+            is->audio_diff_threshold = is->audio_diff_threshold /50;
+        }
 
         is->audio_stream = stream_index;
         is->audio_st = ic->streams[stream_index];
