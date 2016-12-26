@@ -409,6 +409,7 @@ static void send_socket_cache(Queue *q) {
 #ifdef SMT_NET_STATE
         int len = smt_send_net_state(s, &buf);
         if(len > 0) {
+            len = MTU;
         }
         else
 #endif
