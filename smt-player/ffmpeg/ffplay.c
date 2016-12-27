@@ -2566,7 +2566,7 @@ static int synchronize_audio(VideoState *is, int nb_samples)
 
                 if (fabs(avg_diff) >= is->audio_diff_threshold) {
                     if(get_master_sync_type(is) == AV_SYNC_SMT_CLOCK) {
-                        adjust = diff * is->audio_src.freq * diff * is->audio_src.freq;
+                        adjust = avg_diff * is->audio_src.freq * avg_diff * is->audio_src.freq;
                         adjust = diff > 0?adjust:-adjust;
                         adjust = adjust / (400* nb_samples);
                     }else {
