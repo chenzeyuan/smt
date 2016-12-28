@@ -181,7 +181,11 @@ static void informs_server_delete(char * server_addr, int fd)
     address = pch; 
     pch = strtok (NULL, ":");
     port = pch;
-    
+
+    if(address == NULL || port == NULL) {
+        av_log(NULL, AV_LOG_ERROR, "[Delete] failure due to unknown address");
+        return;
+    }
     bzero(&server, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = inet_addr(address);
