@@ -2573,7 +2573,7 @@ static int synchronize_audio(VideoState *is, int nb_samples)
                         adjust = adjust / (400* nb_samples);
 			float adjust_percent = fabs(1.0f * adjust / nb_samples);
 			/* if there is a big adjust, mute the auido */
-                        is->muted2 = (adjust_percent>0.1) ?1:0;
+                        is->muted2 = (adjust_percent>0.05) ?1:0;
                         min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
 			max_nb_samples = ((nb_samples * (100 + 8 * SMT_SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     }else {
