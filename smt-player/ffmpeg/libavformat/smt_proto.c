@@ -500,7 +500,7 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
 #if !defined(__ANDROID__)
 
-                    if(smt_callback_entity.get_last_packet_counter(h) + 1 == p->packet_counter || p->packet_counter == 0) {
+                    if(smt_callback_entity.get_last_packet_counter(h) + 1 == p->packet_counter || smt_callback_entity.get_last_packet_counter(h) == 0) {
                     } else {
                         char* device = NULL;
                         device = get_av_log_device_info();
