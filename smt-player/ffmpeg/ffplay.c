@@ -94,7 +94,7 @@ extern int64_t begin_time;
 #define AV_NOSYNC_THRESHOLD 10
 
 /* maximum audio speed change to get correct sync */
-#define SAMPLE_CORRECTION_PERCENT_MAX 90 
+#define SAMPLE_CORRECTION_PERCENT_MAX 10 
 #define SMT_SAMPLE_CORRECTION_PERCENT_MAX 90 
 
 /* external clock speed adjustment constants for realtime sources based on buffer fullness */
