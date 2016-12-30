@@ -505,12 +505,13 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                         char* device = NULL;
                         device = get_av_log_device_info();
                         if(!device) device = "none";
-                        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\"}\n", 
+                        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\",\"time\":\"%lld\"}\n", 
                                 device,
                                 h->filename,
                                 p->packet_counter - smt_callback_entity.get_last_packet_counter(h) -1,
                                 p->packet_counter,
-                                smt_callback_entity.get_last_packet_counter(h));
+                                smt_callback_entity.get_last_packet_counter(h),
+                                av_gettime());
 
                     }
                     smt_callback_entity.set_last_packet_counter(h, p->packet_counter);
@@ -1157,6 +1158,9 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                                 mpu->moof_header_data,
                                                 mpu->sample_data);
                         smt_release_mpu(h, mpu);
+                        smt_release_buffer(h, recv, asset_id);
+						recv->mpu_head[asset_id] = p;
+                        return SMT_STATUS_ERROR;
                     }
 #ifdef SMT_DUMP
                     char fn[256];
