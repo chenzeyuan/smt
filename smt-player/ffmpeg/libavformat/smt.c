@@ -107,6 +107,8 @@ static struct SMT4AvLogExt info_av_log_ext = {0};
 
 int smt_add_delivery_url(const char *uri);
 int smt_del_delivery_url(const char *uri);
+int smt_reset_delivery_url(void);
+
 int server_socket_fd = -1 ;
 int smt_bitrate = 0;
 
@@ -1250,4 +1252,28 @@ int smt_del_delivery_url(const char *uri)
     }
     return 1;
 }
+
+int smt_reset_delivery_url(void)
+{
+    char hostname[1024];
+    int port = 0, tmp, smt_fd = -1, bind_ret = -1;
+    struct sockaddr_storage my_addr;
+    socklen_t len;
+    char *localaddr;
+    int i, j;
+    
+    if(smtContext->smt_fd_size == 1)
+        return -1;
+
+    for(i = 1; i < smtContext->smt_fd_size; i++)
+    {    
+        if (smtContext->is_multicast[i]) 
+            smt_leave_multicast_group(smtContext->smt_fd[i], (struct sockaddr *)&smtContext->dest_addr[i],(struct sockaddr *)&smtContext->local_addr_storage[i]);
+        closesocket(smtContext->smt_fd[i]);
+        smtContext->smt_fd[i] = 0;
+    }
+    smtContext->smt_fd_size == 1;
+    return 1;
+}
+
 

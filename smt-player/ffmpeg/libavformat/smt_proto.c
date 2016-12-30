@@ -1157,7 +1157,6 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                                 mpu->moof_header_data,
                                                 mpu->sample_data);
                         smt_release_mpu(h, mpu);
-                        return SMT_STATUS_ERROR;
                     }
 #ifdef SMT_DUMP
                     char fn[256];
@@ -1185,7 +1184,8 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         cur_begin_time_value = time_zero_us / 1000 + (int64_t)timestamp_of_first_packet; 
                         if( 0 == smt_callback_entity.get_begin_time(h, p->packet_id) )  { 
                             smt_callback_entity.set_begin_time(h, p->packet_id, cur_begin_time_value);
-                                                        av_log(h, AV_LOG_INFO, "\njxj set asset_id=%d(mpu=%d) begin_time=%lld\n",
+                                
+                        av_log(h, AV_LOG_INFO, "\njxj set asset_id=%d(mpu=%d) begin_time=%lld\n",
                                         p->packet_id, 
                                         pld_f->MPU_sequence_number,
                                         cur_begin_time_value );

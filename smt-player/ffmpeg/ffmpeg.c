@@ -176,6 +176,8 @@ extern int configure_complex_filters(void);
 static int transcode_init(void);
 extern int smt_add_delivery_url(const char *uri);
 extern int smt_del_delivery_url(const char *uri);
+extern int smt_reset_delivery_url(void);
+
 
 
 static void close_output_stream(OutputStream *ost)
@@ -217,7 +219,20 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
             // Warning: server continue forwarding data to keep the session alive.
             // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
             // As the result, do NOT erase this sleep() for 2 seconds.
-            av_usleep(2000000);
+            //av_usleep(2000000);
+        }
+
+        // del RESET is the method to clean all the streams 
+        else if(strcmp(delete_address, "RESET") == 0)
+        {
+            smt_reset_delivery_url();
+            return 1;
+
+
+            // Warning: server continue forwarding data to keep the session alive.
+            // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
+            // As the result, do NOT erase this sleep() for 2 seconds.
+            //av_usleep(2000000);
         }
 
         #if 0

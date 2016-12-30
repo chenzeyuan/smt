@@ -4064,8 +4064,13 @@ static void event_loop(VideoState *cur_stream[])
                 int index = event.user.code;
                 char * delete_server = event.user.data1;
                 int i = 0;
-                av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d:%d required to be DELETEd\n", input_filename[index], index ,nb_input_files);
 
+                if(index == -1) {
+                    inform_server_delete(delete_server, "RESET");
+                    break;
+                }
+
+                av_log(NULL, AV_LOG_WARNING, "[Deleting] address %s index %d:%d required to be DELETEd\n", input_filename[index], index ,nb_input_files);
                 // first to hide the window to prevent the picture flutter 
                 SDL_HideWindow(window[index]);
 
@@ -4487,6 +4492,18 @@ static int handle_command(char * command)
         delete_address = pch;
         if(delete_address == NULL) return -1; 
         av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELETE\n", delete_address);
+
+        if(strcmp(delete_address, "RESET") == 0) {
+            SDL_Event e;
+            SDL_zero(e);
+        
+            e.type = SDL_USEREVENT;
+            e.user.code = -1;   
+            e.user.data1 = modify_server;
+            
+            SDL_PushEvent(&e);
+            return 1;
+        }
 
         for( i = 0; i <= nb_input_files; i++) {
             if(strcmp(delete_address, input_filename[i]) == 0) {
