@@ -275,6 +275,7 @@ typedef struct VideoState {
     int audio_write_buf_size;
     int audio_volume;
     int muted;
+    int muted2;
     struct AudioParams audio_src;
 #if CONFIG_AVFILTER
     struct AudioParams audio_filter_src;
@@ -2572,7 +2573,7 @@ static int synchronize_audio(VideoState *is, int nb_samples)
                         adjust = adjust / (400* nb_samples);
 			float adjust_percent = fabs(1.0f * adjust / nb_samples);
 			/* if there is a big adjust, mute the auido */
-                        is->muted = (adjust_percent>0.1) ?1:0;
+                        is->muted2 = (adjust_percent>0.1) ?1:0;
                         min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
 			max_nb_samples = ((nb_samples * (100 + 8 * SMT_SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     }else {
@@ -2743,11 +2744,11 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
         len1 = is->audio_buf_size - is->audio_buf_index;
         if (len1 > len)
             len1 = len;
-        if (!is->muted && is->audio_volume == SDL_MIX_MAXVOLUME)
+        if (!is->muted && !is->muted2 && is->audio_volume == SDL_MIX_MAXVOLUME)
             memcpy(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
         else {
             memset(stream, is->silence_buf[0], len1);
-            if (!is->muted)
+            if (!is->muted && !is->muted2)
                 SDL_MixAudio(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1, is->audio_volume);
         }
         len -= len1;
@@ -3390,6 +3391,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->audio_clock_serial = -1;
     is->audio_volume = SDL_MIX_MAXVOLUME;
     is->muted = 0;
+    is->muted2 = 0;
     is->av_sync_type = av_sync_type;
     is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);
     if (!is->read_tid) {
