@@ -94,7 +94,8 @@ extern int64_t begin_time;
 #define AV_NOSYNC_THRESHOLD 10
 
 /* maximum audio speed change to get correct sync */
-#define SAMPLE_CORRECTION_PERCENT_MAX 30 
+#define SAMPLE_CORRECTION_PERCENT_MAX 90 
+#define SMT_SAMPLE_CORRECTION_PERCENT_MAX 90 
 
 /* external clock speed adjustment constants for realtime sources based on buffer fullness */
 //#define EXTERNAL_CLOCK_SPEED_MIN  0.900
@@ -2569,12 +2570,17 @@ static int synchronize_audio(VideoState *is, int nb_samples)
                         adjust = avg_diff * is->audio_src.freq * avg_diff * is->audio_src.freq;
                         adjust = diff > 0?adjust:-adjust;
                         adjust = adjust / (400* nb_samples);
+			float adjust_percent = fabs(1.0f * adjust / nb_samples);
+			/* if there is a big adjust, mute the auido */
+                        is->muted = (adjust_percent>0.1) ?1:0;
+                        min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
+			max_nb_samples = ((nb_samples * (100 + 8 * SMT_SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     }else {
                         adjust = diff * is->audio_src.freq ;
+                        min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
+                        max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     }
                     wanted_nb_samples = nb_samples + (int)(adjust );
-                    min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
-                    max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));
                     wanted_nb_samples = av_clip(wanted_nb_samples, min_nb_samples, max_nb_samples);
                 }
                 av_log(NULL, AV_LOG_TRACE, "diff=%f adiff=%f sample_diff=%d apts=%0.3f %f\n",
