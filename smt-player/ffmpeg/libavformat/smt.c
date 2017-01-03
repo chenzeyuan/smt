@@ -1232,9 +1232,9 @@ int smt_del_delivery_url(const char *uri)
     {    
         struct sockaddr_in * dest_addr = (struct sockaddr_in *)&smtContext->dest_addr[i];        
         char addr_buf[100];
-        sprintf(addr_buf, "%s:%d", inet_ntoa(dest_addr->sin_addr), (int)ntohs(dest_addr->sin_port));
+        sprintf(addr_buf, "smt://%s:%d", inet_ntoa(dest_addr->sin_addr), (int)ntohs(dest_addr->sin_port));
         av_log(NULL, AV_LOG_WARNING, "try to del %s with %s, total: %d \n", uri, addr_buf, smtContext->smt_fd_size);
-        if(!strcmp(uri, addr_buf))
+        if(strcmp(uri, addr_buf))
             continue;
         
         av_log(NULL, AV_LOG_WARNING, "found try to del %s on slot %d \n", inet_ntoa(dest_addr->sin_addr), i);

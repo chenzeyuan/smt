@@ -227,67 +227,7 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
         {
             smt_reset_delivery_url();
             return 1;
-
-
-            // Warning: server continue forwarding data to keep the session alive.
-            // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
-            // As the result, do NOT erase this sleep() for 2 seconds.
-            //av_usleep(2000000);
-        }
-
-        #if 0
-        int i;
-        for (i = 0; i < nb_output_streams; i++) {
-            OutputStream *ost    = output_streams[i];
-            OutputFile *of       = output_files[ost->file_index];
-            AVFormatContext *os  = output_files[ost->file_index]->ctx;
-        
-            printf("file name %s\n", os->filename);
-            if (strstr(os->filename, pch?pch:inet_ntoa(client_addr.sin_addr)) == NULL)
-                continue;
-            else {
-                int j;
-                int tmp_file_index;
-                printf("found");
-
-                // first to clost the stream.
-                for (j = 0; j < of->ctx->nb_streams; j++) 
-                    close_output_stream(output_streams[of->ost_index + j]);
-
-                // Warning! to keep the stable the streams and files array, that is output_streams and output_files
-                // we have to remove it from the array, which would lead to re-arrangement of the array (shift).
-                // although without enough testing, it is expected to cause the problem of the whole stream flows.
-                //
-                // the idealy solution is to adjust the arrays dynamically.
-                // unfortunately, we cannot do that, because all the ffmpeg regard the arrays as the continous array.
-                // so the shift is next to be done. 
-                // full test need to done after several ADD and DEL operations.
-                // TODO: liminghao   test the maintance of the array
-                tmp_file_index = ost->file_index;
-                nb_output_streams -= of->ctx->nb_streams;
-                // second to shift the stream array
-                for (j = i; j < nb_output_streams; j++) {
-                    output_streams[j] = output_streams[j + of->ctx->nb_streams];
-                    output_streams[j]->file_index--;
-                }
-
-                // last to shift the file array
-                nb_output_files--;
-                for (j = tmp_file_index; j < nb_output_files; j++) {
-                    output_files[j] = output_files[j + 1];
-                    output_files[j]->ost_index -= of->ctx->nb_streams;
-                }
-
-                 /* configure the complex filtergraphs */
-                configure_complex_filters();
-                //transcode_init();
-                
-                return 1;
-                
-            }
         }        
-        #endif
-        
         smt_del_delivery_url(delete_address?delete_address:inet_ntoa(client_addr.sin_addr)); 
     }
     else if(strcmp (pch, "add") == 0) {  
@@ -310,41 +250,6 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
                 av_log(NULL, AV_LOG_WARNING, "[Result] SOURCE address is changed to %s\n", buffer);
                 added_address = av_strdup(buffer);
             }
-            #if 0
-            int i;
-            OptionsContext o;
-            for (i = 0; i < nb_output_streams; i++) {
-                OutputStream *ost    = output_streams[i];
-                OutputFile *of       = output_files[ost->file_index];
-                AVFormatContext *os  = output_files[ost->file_index]->ctx;
-            
-                printf("file name %s\n", os->filename);
-                if (strstr(os->filename, added_address) == NULL)
-                    continue;
-                else {
-                        av_log(NULL, AV_LOG_WARNING, "[Result] address %s has already been ADDed. Ignore.\n", added_address);
-                        return -1;
-                }
-            }
-
-            memset(&o, 0, sizeof(o));
-            
-            o.stop_time = INT64_MAX;
-            o.mux_max_delay  = 0.7;
-            o.start_time     = AV_NOPTS_VALUE;
-            o.start_time_eof = AV_NOPTS_VALUE;
-            o.recording_time = INT64_MAX;
-            o.limit_filesize = UINT64_MAX;
-            o.chapters_input_file = INT_MAX;
-            o.accurate_seek  = 1;
-            o.format = "mpegts";
-
-            open_output_file(&o, added_address);
-            /* configure the complex filtergraphs */
-            configure_complex_filters();
-            transcode_init();
-            #endif
-            printf("add");    
 
             smt_add_delivery_url(added_address);
         }

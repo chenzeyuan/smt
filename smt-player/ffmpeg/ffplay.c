@@ -4551,24 +4551,22 @@ static int handle_command(char * command)
             // using ',' as the delimiter
              pch = strtok (added_address, ",");
 
-            if(pch != NULL) {
-                while (pch != NULL)
-                {
-                    char *tail;
-                    double d;
-                    if(i == 0) { pch = strtok (NULL, ","); i++; continue;}
+            while (pch != NULL)
+            {
+                char *tail;
+                double d;
+                pch = strtok (NULL, ",");
+                if(!pch) break;
 
-                    d = av_strtod(pch, &tail);
-                    if (*tail) exit_program(1);
-                    switch(i) {
-                        case 1:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
-                        case 2:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
-                        case 3:   input_file_resource[nb_input_files+1].screen_width= d;  break;
-                        case 4:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
-                    }
-                    pch = strtok (NULL, ",");
-                    i++;
+                d = av_strtod(pch, &tail);
+                if (*tail) exit_program(1);
+                switch(i) {
+                    case 0:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
+                    case 1:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
+                    case 2:   input_file_resource[nb_input_files+1].screen_width= d;  break;
+                    case 3:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
                 }
+                i++;
             }
 
             for( i = 0; i <= nb_input_files; i++) {
@@ -4584,9 +4582,8 @@ static int handle_command(char * command)
             // do not send request from here.
             // for NAT punching.
             char full_address[100];
-            char * port = strrchr(added_address,':') + 1;
             
-            sprintf( full_address, "%s@%s", added_address, added_server, port);
+            sprintf( full_address, "%s@%s", added_address, added_server);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
