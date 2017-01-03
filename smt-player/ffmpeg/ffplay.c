@@ -4671,7 +4671,35 @@ static int handle_command(char * command)
         }
         else
             return -1;
-    }    
+    }  
+
+    /////////////////////////////////
+    else if (strcmp (pch, "swi") == 0 || strcmp (pch, "switch") == 0) {
+        char * key;
+        char * channel;
+        pch = strtok (NULL, " ");
+        key = pch;
+        pch = strtok (NULL, " ");
+        channel = pch;
+
+        int channel_num = atoi(channel);
+        if(channel_num > nb_input_files || channel_num < 0) {
+            av_log(NULL, AV_LOG_WARNING, "[Switch fail] cannot switch to %d beyond %d\n", channel_num, nb_input_files);  
+            return -1;
+        }
+        av_log(NULL, AV_LOG_WARNING, "[Switch] switch %s to %d : %d\n", key, channel_num, nb_input_files);  
+            
+        for(int i = 0 ; i <= nb_input_files; i++) {  
+            if (i == channel_num) continue;                
+            if(!strcmp(key, "channel")) SDL_HideWindow( window[i] );
+            global_is[i]->muted = 1;
+        }  
+        global_is[channel_num]->muted = 0;
+        if(!strcmp(key, "channel")) {
+            SDL_ShowWindow( window[channel_num]);                
+            SDL_RaiseWindow( window[channel_num] );   
+        }
+    }
     else {        
       av_log(NULL, AV_LOG_ERROR, "[Result] unknow command\n");
       return -1;
