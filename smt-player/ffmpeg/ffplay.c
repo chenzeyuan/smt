@@ -4102,7 +4102,6 @@ static void event_loop(VideoState *cur_stream[])
                     renderer[i] = renderer[i+1];
                     global_is[i]->idx_screen--;
                     memcpy(&input_file_resource[i], &input_file_resource[i+1], sizeof(ResourceParam));
-                    SMT_FD[index] = SMT_FD[index+1];
                     //begin_time_value[i] = begin_time_value[i+1];
                 }
                 av_log(NULL, AV_LOG_WARNING, "total stream is: %d\n", nb_input_files);
@@ -4113,7 +4112,6 @@ static void event_loop(VideoState *cur_stream[])
                 window[i] = NULL;
                 renderer[i] = NULL;
                 nb_input_files--;
-                nb_smt_fd--;
 
                 refresh_video();
 

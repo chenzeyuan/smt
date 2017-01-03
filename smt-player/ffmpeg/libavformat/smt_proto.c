@@ -58,9 +58,6 @@ enum {
     INVALID_SIGNALLING_MESSAGE  = -7,
 };
 
-int SMT_FD[SMT_MAX_DELIVERY_NUM];
-int nb_smt_fd = -1;
-
 
 //add for test
 static void print_all(smt_payload_sig * sig){

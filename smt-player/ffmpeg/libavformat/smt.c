@@ -864,9 +864,6 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     smtContext = s;
     smtH = h;
 
-    SMT_FD[nb_smt_fd+1] = smt_fd;
-    nb_smt_fd++;
-
     if(strlen(server)) {
         strcpy(s->remote_server, server);
         inform_server_add(server, smt_fd);
