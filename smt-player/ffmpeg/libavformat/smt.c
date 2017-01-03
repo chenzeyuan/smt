@@ -112,19 +112,6 @@ int smt_reset_delivery_url(void);
 int server_socket_fd = -1 ;
 int smt_bitrate = 0;
 
-static int count_colon(char *str)
-{
-    char *p = str;
-    int cnt = 0;
- 
-    while (*p != '\0') {
-        if (*p == ':') {
-            cnt++;
-        }
-        p++;
-    } 
-    return cnt;
-}
 
 
 static int64_t smt_on_mpu_lost(URLContext *h, unsigned short packet_id, int64_t count) {
@@ -1004,7 +991,7 @@ static int smt_close(URLContext *h)
     }
 
     s->generate_thread_run = 0;
-#ifndef SMT_ANDROID
+#if !defined(SMT_ANDROID) && !defined(__ANDROID__)
     pthread_cancel(s->mpu_generate_thread);
 #endif
     ret = pthread_join(s->mpu_generate_thread, NULL);
@@ -1109,14 +1096,6 @@ static unsigned int smt_get_last_packet_counter(URLContext *h) {
     return s->last_packet_counter;    
 }
 
-
-static unsigned int smt_set_media_info(URLContext *h, unsigned int mpu_sequence, unsigned short packet_id, int64_t duration, int32_t timescale) {
-    if(!h || !h->priv_data) return 0;
-    SMTContext *s = h->priv_data;
-    return s->last_packet_counter;    
-}
-
-
 static int64_t smt_get(URLContext *h, AVDictionary **options)
 {
     SMTContext *s = NULL;
@@ -1213,7 +1192,6 @@ int smt_add_delivery_url(const char *uri)
 
     smtContext->smt_fd[smtContext->smt_fd_size] = smt_fd;
     smtContext->smt_fd_size++;
-
     return 1;
 }
 

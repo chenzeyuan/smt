@@ -492,8 +492,6 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     p->packet_id = (recv->packet_buffer[2] << 8) | recv->packet_buffer[3];
                     p->timestamp = (recv->packet_buffer[4] << 24) | (recv->packet_buffer[5] << 16) | (recv->packet_buffer[6] << 8) | recv->packet_buffer[7];
                     p->packet_sequence_number = (recv->packet_buffer[8] << 24) | (recv->packet_buffer[9] << 16) | (recv->packet_buffer[10] << 8) | recv->packet_buffer[11];
-                    //int64_t now_time_us =  av_gettime();
-                    //av_log(h, AV_LOG_INFO, "get packet number = %d, delay is %d \n",p->packet_sequence_number, now_time_us - p->timestamp);
                     p->packet_counter = (recv->packet_buffer[12] << 24) | (recv->packet_buffer[13] << 16) | (recv->packet_buffer[14] << 8) | recv->packet_buffer[15];
 #if !defined(__ANDROID__)
 
@@ -501,7 +499,6 @@ static smt_status smt_parse_packet(URLContext *h, smt_receive_entity *recv, unsi
                     } else {
                         char* device = NULL;
                         device = get_av_log_device_info();
-                        if(!device) device = "none";
                         av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"packet_lost\":\"%d\",\"packet_counter\":\"%u\",\"last_packet_counter\":\"%u\",\"time\":\"%lld\"}\n", 
                                 device,
                                 h->filename,
@@ -901,9 +898,6 @@ static smt_status smt_assemble_mpu(URLContext *h, smt_receive_entity *recv, int 
 						it = it->next;
 						seq = it->packet_sequence_number;
 					}
-//                    smt_mp4_time_info(mpu->mpu_header_data, mpu->mpu_header_length, 0);
-//                    smt_mp4_time_info(mpu->moof_header_data, mpu->moof_header_length, 1);
-                    //smt_parser_media_info(mpu);
 
                     //check track id in mpu header     
 					int tkhd_offset = smt_find_field(mpu->mpu_header_data ,mpu->mpu_header_length,"tkhd", 4);
@@ -1156,7 +1150,7 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                                                 mpu->sample_data);
                         smt_release_mpu(h, mpu);
                         smt_release_buffer(h, recv, asset_id);
-						recv->mpu_head[asset_id] = p;
+                        recv->mpu_head[asset_id] = p;
                         return SMT_STATUS_ERROR;
                     }
 #ifdef SMT_DUMP
@@ -1186,28 +1180,12 @@ static smt_status smt_add_mpu_packet(URLContext *h, smt_receive_entity *recv, sm
                         if( 0 == smt_callback_entity.get_begin_time(h, p->packet_id) )  { 
                             smt_callback_entity.set_begin_time(h, p->packet_id, cur_begin_time_value);
                                 
-                        av_log(h, AV_LOG_INFO, "\njxj set asset_id=%d(mpu=%d) begin_time=%lld\n",
+                        av_log(h, AV_LOG_INFO, "\n set asset_id=%d(mpu=%d) begin_time=%lld\n",
                                         p->packet_id, 
                                         pld_f->MPU_sequence_number,
                                         cur_begin_time_value );
                         }
 
-                        //int64_t timestamp_64 = time_zero_us  + (int64_t)timestamp_of_first_packet * 1000;
-                        int64_t todaytime = now_time_us - time_zero_us;
-                        //int64_t delay = now_time_us - cur_begin_time_value * 1000;
-                        int64_t delay = now_time_us - time_zero_us -  (int64_t)p->timestamp * 1000;
-#if 0
-                        device = get_av_log_device_info();
-                        av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time\":\"%lld\",\"timestamp\":\"%lld\",\"delay\":\"%lld\",\"packed_id\":\"%d\",\"packet_sequence_number\":\"%d\",\"packet_counter\":\"%d\"}\n", 
-                                device,
-                                h->filename, 
-                                now_time_us , 
-                                cur_begin_time_value * 1000,
-                                delay,
-                                p->packet_id,
-                                p->packet_sequence_number,
-                                p->packet_counter );
-#endif
 
                     }
 
@@ -1769,23 +1747,6 @@ smt_status smt_pack_mpu(URLContext *h, smt_send_entity *snd, unsigned char* buff
         if( 0 == first_time ) {
             first_time = now_time;
         }
-        //time_t t;
-        //time(&t);
-		/* time_displacement is used for delay calculate in infomation server */
-#if 0        
-        static int log_time_displacement_count = 0;
-        if( 0 == log_time_displacement_count) {
-            char* device = NULL;
-            device = get_av_log_device_info();
-            if(!device) device = "none";
-            int64_t diffdiff = ffmpeg_begin_time * 1000 + get_today_zero_oclock(NULL) - first_time; 
-            av_log_ext(NULL, AV_LOG_ERROR, "{\"device\":\"%s\",\"filename\":\"%s\",\"time_displacement\":\"%lld\"}\n", 
-                    device,
-                    h->filename,
-                    diffdiff);
-        } 
-        log_time_displacement_count = (log_time_displacement_count>=5000)?0:(log_time_displacement_count+1);
-#endif
         pkt->timestamp =  ffmpeg_begin_time + (now_time - first_time)/1000 ;
 		smt_assemble_packet_header(h, snd, pld->data, pkt);
 
