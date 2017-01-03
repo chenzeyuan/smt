@@ -782,6 +782,7 @@ int ff_smt_set_remote_url(URLContext *h, const char *uri)
 static int smt_open(URLContext *h, const char *uri, int flags)
 {
     char hostname[1024];
+    char server[1024];
     int port = 0, tmp, smt_fd = -1, bind_ret = -1;
     SMTContext *s = h->priv_data;
     struct sockaddr_storage my_addr;
@@ -794,7 +795,7 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     h->is_streamed = 1;
     
     /* fill the dest addr */
-    av_url_split(NULL, 0, NULL, 0, hostname, sizeof(hostname), &port, NULL, 0, uri);
+    av_url_split(NULL, 0, server, sizeof(server), hostname, sizeof(hostname), &port, NULL, 0, uri);
     
     if (hostname[0] == '\0' || hostname[0] == '?') {
         /* only accepts null hostname if input e.g. smt://@:5050 */
@@ -866,9 +867,12 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     SMT_FD[nb_smt_fd+1] = smt_fd;
     nb_smt_fd++;
 
-    if(count_colon(uri) == 3) {
-        sprintf(s->remote_server, "%s:%d", hostname, port);
-        inform_server_add(s->remote_server, smt_fd);
+    if(strlen(server)) {
+        strcpy(s->remote_server, server);
+        inform_server_add(server, smt_fd);
+    }
+    else {
+        memset(s->remote_server, 0, sizeof(s->remote_server));
     }
 
 

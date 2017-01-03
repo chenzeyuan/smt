@@ -4582,8 +4582,9 @@ static int handle_command(char * command)
             // do not send request from here.
             // for NAT punching.
             char full_address[100];
-            
-            sprintf( full_address, "%s@%s", added_address, added_server);
+
+            // now the format is smt://server_addr@client_addr
+            sprintf( full_address, "smt://%s@%s", added_server, added_address + 6);
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
