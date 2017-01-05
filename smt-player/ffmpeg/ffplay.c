@@ -3899,11 +3899,11 @@ static void event_loop(VideoState *cur_stream[])
                     break;
                 }
                 av_log(NULL, AV_LOG_WARNING, "receieve page up key\n");
-                if(layout) {
+                {
                     int show_number = 0;
                     int i = ((layout == 1) ? 1:0);
                     if( ((layout == 1) && (main_screen == 0 || main_screen == 1))
-                        || ((layout == 2) && (main_screen == 0)))
+                        || (main_screen == 0))
                         show_number = nb_input_files;
                     else 
                         show_number = main_screen - 1;
@@ -3929,7 +3929,7 @@ static void event_loop(VideoState *cur_stream[])
                 }
 
                 av_log(NULL, AV_LOG_WARNING, "receieve page down key\n");
-                if(layout) {
+                {
                     int show_number = 0;
                     int i = ((layout == 1) ? 1:0);
                     if(main_screen == nb_input_files )
