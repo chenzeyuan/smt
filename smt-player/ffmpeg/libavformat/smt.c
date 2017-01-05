@@ -918,7 +918,11 @@ static int smt_read(URLContext *h, uint8_t *buf, int size)
         pthread_mutex_lock(&s->mutex);
         avail = av_fifo_size(s->fifo);
         if(0 >= avail){
-            if (pthread_cond_wait(&s->cond, &s->mutex) < 0) {
+            int64_t t = av_gettime() + 100000;
+            struct timespec tv = { .tv_sec  =  t / 1000000,
+                                   .tv_nsec = (t % 1000000) * 1000 };
+
+            if (pthread_cond_timedwait(&s->cond, &s->mutex, &tv) < 0) {
                 pthread_mutex_unlock(&s->mutex);
                 return AVERROR(errno == ETIMEDOUT ? EAGAIN : errno);
             }
@@ -928,8 +932,13 @@ static int smt_read(URLContext *h, uint8_t *buf, int size)
             //av_log(h, AV_LOG_WARNING, "insufficient buffer size for smt data. size = %u, avail = %u\n",size, avail);
             avail = size;
         }
-        av_fifo_generic_read(s->fifo, buf, avail, NULL);
-        pthread_mutex_unlock(&s->mutex);
+        if(avail) {
+            av_fifo_generic_read(s->fifo, buf, avail, NULL);
+            pthread_mutex_unlock(&s->mutex);
+        } else {
+            pthread_mutex_unlock(&s->mutex);
+            return AVERROR(EAGAIN);
+        }
     }
 
     //avformat_dump("data.mp4", buf, avail, "a+");
