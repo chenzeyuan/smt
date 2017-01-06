@@ -1,4 +1,3 @@
-#ifdef SMT_PROTOCAL_SIGNAL
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -14,26 +13,27 @@
 #include <errno.h>
 #include <inttypes.h>
 
+
+#include "smt_proto.h"
+#ifdef SMT_PROTOCAL_SIGNAL
+#include "smt_signal.h"
+#include "smt_getfile.h"
+#include "json.h"
+#include "parse_flags.h"
 #include <libxml/xmlreader.h>
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
-#include "smt_signal.h"
-#include "smt_proto.h"
-#include "smt_getfile.h"
-#include "json.h"
-#include "parse_flags.h"
 
 
 #define max_level_id_num 1000
 extern smt_callback     smt_callback_entity;
 
 
-
-
 int init_pa_message(pa_message_t *pa_header,unsigned char *PAh)
 {
+
 //    memset(PAh,0,PAh_BUFF_LEN );
 //7 byte
     *((u_int16_t*)&PAh[0])=htons((u_int16_t)pa_header->message_id);

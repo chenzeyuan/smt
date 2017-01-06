@@ -8,6 +8,7 @@
 #include "network.h"
 #include <stdbool.h>
 #include "url.h"
+
 #ifdef SMT_PROTOCAL_SIGNAL
 #include "smt_signal.h"
 #endif
