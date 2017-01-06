@@ -341,6 +341,8 @@ typedef struct ResourceParam {
     int screen_heigth;
     int screen_posx;
     int screen_posy;
+    // -1 indicates master flow, otherwise it indicates which one is this master 
+    int resource_owner;   
 } ResourceParam;
 
 
@@ -4470,6 +4472,7 @@ static void init_windows_resource(void) {
         input_file_resource[i].screen_posy = -1;
         input_file_resource[i].screen_width= -1;
         input_file_resource[i].screen_heigth= -1;
+        input_file_resource[i].resource_owner = -1;
     }
 }
 
@@ -4567,6 +4570,7 @@ static int handle_command(char * command)
                 i++;
             }
 
+            input_file_resource[nb_input_files+1].resource_owner = -1;
             for( i = 0; i <= nb_input_files; i++) {
                 if(strcmp(added_address, input_filename[i]) == 0) {
                     break;
@@ -4581,8 +4585,22 @@ static int handle_command(char * command)
             // for NAT punching.
             char full_address[100];
 
-            // now the format is smt://server_addr@client_addr
-            sprintf( full_address, "smt://%s@%s", added_server, added_address + 6);
+            // when the command is add resource .. it means this is a attached resource like pic.
+            // it will be connected a master resource which is the last master resource
+            if(!strcmp(added_server, "resource")) {
+                int j;
+                for (j = nb_input_files; j >= 0; j--) {
+                    if(input_file_resource[j].resource_owner == -1)
+                        break;
+                }
+                input_file_resource[nb_input_files+1].resource_owner = j;                
+                av_log(NULL, AV_LOG_WARNING, "[Added Resource]  No. %d connected to: %d\n", nb_input_files+1, j);
+                sprintf( full_address, "%s", added_address);
+            }
+            else{
+                // now the format is smt://server_addr@client_addr
+                sprintf( full_address, "smt://%s@%s", added_server, added_address + 6);
+            }
             input_filename[nb_input_files+1] = av_strdup(added_address);
             
             global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
