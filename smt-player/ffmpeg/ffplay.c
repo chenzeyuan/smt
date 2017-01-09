@@ -66,6 +66,8 @@
 
 #include <assert.h>
 
+#include <libavutil/cJSON.h>
+
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
 extern int64_t begin_time; 
@@ -338,7 +340,7 @@ typedef struct VideoState {
 
 typedef struct ResourceParam {
     int screen_width;
-    int screen_heigth;
+    int screen_height;
     int screen_posx;
     int screen_posy;
     // -1 indicates master flow, otherwise it indicates which one is this master 
@@ -1461,9 +1463,9 @@ static int video_open(VideoState *is)
                 }
                 else if (input_file_resource[is->idx_screen].screen_posx != -1) {
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
-                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_height, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
-                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                    is->height = input_file_resource[is->idx_screen].screen_height;
                 }
                 else {
                     window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
@@ -1480,9 +1482,9 @@ static int video_open(VideoState *is)
                 }
                 else{
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
-                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_height, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
-                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                    is->height = input_file_resource[is->idx_screen].screen_height;
                 }
 
                 // to check if need to refresh, so as to show all of them.
@@ -1533,9 +1535,9 @@ static int video_open(VideoState *is)
                 }
                 else if (input_file_resource[is->idx_screen].screen_posx != -1) {  
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
-                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                    input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_height, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
-                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                    is->height = input_file_resource[is->idx_screen].screen_height;
                 }
                 else {
                     window[is->idx_screen] = SDL_CreateWindow("", screen_posX, screen_posY, w , h, flags);
@@ -1567,9 +1569,9 @@ static int video_open(VideoState *is)
                 else{
                     
                     window[is->idx_screen] = SDL_CreateWindow("", input_file_resource[is->idx_screen].screen_posx, input_file_resource[is->idx_screen].screen_posy, 
-                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_heigth, flags);
+                        input_file_resource[is->idx_screen].screen_width, input_file_resource[is->idx_screen].screen_height, flags);
                     is->width  = input_file_resource[is->idx_screen].screen_width;
-                    is->height = input_file_resource[is->idx_screen].screen_heigth;
+                    is->height = input_file_resource[is->idx_screen].screen_height;
                 }
 
                 // to check if need to refresh, so as to show all of them.
@@ -4314,7 +4316,7 @@ static void opt_input_file(void *optctx, const char *filename)
                 case 1:   input_file_resource[nb_input_files].screen_posx = d;  break;
                 case 2:   input_file_resource[nb_input_files].screen_posy= d;  break;
                 case 3:   input_file_resource[nb_input_files].screen_width= d;  break;
-                case 4:   input_file_resource[nb_input_files].screen_heigth= d;  break;
+                case 4:   input_file_resource[nb_input_files].screen_height= d;  break;
             }
             pch = strtok (NULL, ",");
             i++;
@@ -4471,45 +4473,41 @@ static void init_windows_resource(void) {
         input_file_resource[i].screen_posx = -1;
         input_file_resource[i].screen_posy = -1;
         input_file_resource[i].screen_width= -1;
-        input_file_resource[i].screen_heigth= -1;
+        input_file_resource[i].screen_height= -1;
         input_file_resource[i].resource_owner = -1;
     }
 }
 
 static int handle_command(char * command)
 {
-    char * pch;
-    char * added_address; 
-    char * delete_address;
-    char * modify_server = NULL;
-    char * delete_server = NULL;
-    int i = 0;
+    cJSON *root = cJSON_Parse(command); 
+    if(!root) return -1;
+    
+    char* type = cJSON_GetObjectItem(root,"type")->valuestring;
+    char* server = NULL;
+    if(cJSON_GetObjectItem(root,"server")) server = cJSON_GetObjectItem(root,"server")->valuestring;
+    cJSON *format = cJSON_GetObjectItem(root,"format"); 
+    char* name = cJSON_GetObjectItem(format,"name")->valuestring;
 
-    pch = strtok (command, " ");
+    int i;
 
-    if(strcmp (pch, "del") == 0 || strcmp (pch, "delete") == 0) {  
-        pch = strtok (NULL, " ");
-        delete_server = pch;
-        modify_server = av_strdup(delete_server);
-        pch = strtok (NULL, " ");
-        delete_address = pch;
-        if(delete_address == NULL) return -1; 
-        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELETE\n", delete_address);
+    if(strcmp (type, "del") == 0 || strcmp (type, "delete") == 0) {  
+        if(server == NULL) return -1; 
+        av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be DELETE\n", server);
 
-        if(strcmp(delete_address, "RESET") == 0) {
+        if(strcmp(name, "RESET") == 0) {
             SDL_Event e;
             SDL_zero(e);
         
             e.type = SDL_USEREVENT;
             e.user.code = -1;   
-            e.user.data1 = modify_server;
+            e.user.data1 = server;
             
             SDL_PushEvent(&e);
             return 1;
         }
-
         for( i = 0; i <= nb_input_files; i++) {
-            if(strcmp(delete_address, input_filename[i]) == 0) {
+            if(strcmp(name, input_filename[i]) == 0) {
                 
                 // Be aware to handle the is[] in the event_loop()
                 // because the other thread may using the is[] at the same time
@@ -4523,7 +4521,7 @@ static int handle_command(char * command)
     
                 e.type = SDL_USEREVENT;
                 e.user.code = i;   
-                e.user.data1 = modify_server;
+                e.user.data1 = server;
                 
                 SDL_PushEvent(&e);
                 break;
@@ -4531,53 +4529,39 @@ static int handle_command(char * command)
         }
 
         if ( i > nb_input_files) {            
-            av_log(NULL, AV_LOG_ERROR, "[Result] address %s does NOT exist\n", delete_address);
+            av_log(NULL, AV_LOG_ERROR, "[Result] address %s does NOT exist\n", server);
             return -1;
          }
     }
-    else if(strcmp (pch, "add") == 0) { 
-        char * added_server;
-        pch = strtok (NULL, " ");
-        added_server = pch;
-        pch = strtok (NULL, " ");
-        added_address = pch;
-
-        if(added_address != NULL) { 
-            av_log(NULL, AV_LOG_WARNING, "[Result] address %s <%s> required to be ADDed\n", added_address, added_server);
+    else if(strcmp (type, "add") == 0) { 
+        if(name != NULL) { 
+            av_log(NULL, AV_LOG_WARNING, "[Result] address %s <%s> required to be ADDed\n", name, server);
   
             if(nb_input_files == MAX_SCREEN_FLOWS) {
                 av_log(NULL, AV_LOG_ERROR, "[Result] ADDed failed due to maximum streams %d \n", nb_input_files);
                 return -1;
             }
-            // using ',' as the delimiter
-             pch = strtok (added_address, ",");
-
-            while (pch != NULL)
-            {
-                char *tail;
-                double d;
-                pch = strtok (NULL, ",");
-                if(!pch) break;
-
-                d = av_strtod(pch, &tail);
-                if (*tail) exit_program(1);
-                switch(i) {
-                    case 0:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
-                    case 1:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
-                    case 2:   input_file_resource[nb_input_files+1].screen_width= d;  break;
-                    case 3:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
-                }
-                i++;
-            }
 
             input_file_resource[nb_input_files+1].resource_owner = -1;
+            input_file_resource[nb_input_files+1].screen_posx = -1;
+            input_file_resource[nb_input_files+1].screen_posy = -1;
+            input_file_resource[nb_input_files+1].screen_width = -1;
+            input_file_resource[nb_input_files+1].screen_height = -1;
+
+            if(cJSON_GetObjectItem(format,"posx")) {
+               input_file_resource[nb_input_files+1].screen_posx = cJSON_GetObjectItem(format,"posx")->valueint;
+               input_file_resource[nb_input_files+1].screen_posy= cJSON_GetObjectItem(format,"posy")->valueint;
+               input_file_resource[nb_input_files+1].screen_width= cJSON_GetObjectItem(format,"width")->valueint;
+               input_file_resource[nb_input_files+1].screen_height= cJSON_GetObjectItem(format,"height")->valueint;
+            }
+
             for( i = 0; i <= nb_input_files; i++) {
-                if(strcmp(added_address, input_filename[i]) == 0) {
+                if(strcmp(name, input_filename[i]) == 0) {
                     break;
                 }
             }
             if( i <= nb_input_files ) {
-                av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already total: %d\n", added_address, nb_input_files);
+                av_log(NULL, AV_LOG_WARNING, "[Added Failed] address %s has been added already total: %d\n", name, nb_input_files);
                 return -1;
             } 
 
@@ -4585,9 +4569,7 @@ static int handle_command(char * command)
             // for NAT punching.
             char full_address[100];
 
-            // when the command is add resource .. it means this is a attached resource like pic.
-            // it will be connected a master resource which is the last master resource
-            if(!strcmp(added_server, "resource")) {
+            if(!server) {
                 int j;
                 for (j = nb_input_files; j >= 0; j--) {
                     if(input_file_resource[j].resource_owner == -1)
@@ -4595,13 +4577,13 @@ static int handle_command(char * command)
                 }
                 input_file_resource[nb_input_files+1].resource_owner = j;                
                 av_log(NULL, AV_LOG_WARNING, "[Added Resource]  No. %d connected to: %d\n", nb_input_files+1, j);
-                sprintf( full_address, "%s", added_address);
+                sprintf( full_address, "%s", name);
             }
             else{
                 // now the format is smt://server_addr@client_addr
-                sprintf( full_address, "smt://%s@%s", added_server, added_address + 6);
+                sprintf( full_address, "smt://%s@%s", server, name + 6);
             }
-            input_filename[nb_input_files+1] = av_strdup(added_address);
+            input_filename[nb_input_files+1] = av_strdup(name);
             
             global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
             if (!global_is[nb_input_files+1]) {
@@ -4618,7 +4600,8 @@ static int handle_command(char * command)
     }
     // note: in order to switch the stream smoothly, we need to soft handoff rather than hard handoff
     // that means we should first add new stream then delete the orignal stream
-    else if (strcmp (pch, "mod") == 0 || strcmp (pch, "modify") == 0) {
+#if 0
+    else if (strcmp (type, "mod") == 0 || strcmp (type, "modify") == 0) {
         int i;
         char * delete_server;
         char * added_server;
@@ -4667,7 +4650,7 @@ static int handle_command(char * command)
                         case 1:   input_file_resource[nb_input_files+1].screen_posx = d;  break;
                         case 2:   input_file_resource[nb_input_files+1].screen_posy= d;  break;
                         case 3:   input_file_resource[nb_input_files+1].screen_width= d;  break;
-                        case 4:   input_file_resource[nb_input_files+1].screen_heigth= d;  break;
+                        case 4:   input_file_resource[nb_input_files+1].screen_height= d;  break;
                     }
                     pch = strtok (NULL, ",");
                     i++;
@@ -4688,30 +4671,29 @@ static int handle_command(char * command)
         else
             return -1;
     }  
-
+#endif
     /////////////////////////////////
-    else if (strcmp (pch, "swi") == 0 || strcmp (pch, "switch") == 0) {
-        char * key;
-        char * channel;
-        pch = strtok (NULL, " ");
-        key = pch;
-        pch = strtok (NULL, " ");
-        channel = pch;
+    else if (!strcmp (type, "show")) {
+        char* kind = cJSON_GetObjectItem(format,"kind")->valuestring;
 
-        int channel_num = atoi(channel);
+        int channel_num = -1;
+        for( channel_num = 0; channel_num <= nb_input_files; channel_num++) {
+            if(strcmp(name, input_filename[channel_num]) == 0) 
+                 break;
+        }                
         if(channel_num > nb_input_files || channel_num < 0) {
-            av_log(NULL, AV_LOG_WARNING, "[Switch fail] cannot switch to %d beyond %d\n", channel_num, nb_input_files);  
+            av_log(NULL, AV_LOG_WARNING, "[Show fail] cannot switch to %d beyond %d\n", channel_num, nb_input_files);  
             return -1;
         }
-        av_log(NULL, AV_LOG_WARNING, "[Switch] switch %s to %d : %d\n", key, channel_num, nb_input_files);  
+        av_log(NULL, AV_LOG_WARNING, "[Show] %s on %d : %d\n", name, channel_num, nb_input_files);  
             
         for(int i = 0 ; i <= nb_input_files; i++) {  
             if (i == channel_num) continue;                
-            if(!strcmp(key, "channel")) SDL_HideWindow( window[i] );
+            if(!strcmp(kind, "all")) SDL_HideWindow( window[i] );
             global_is[i]->muted = 1;
         }  
         global_is[channel_num]->muted = 0;
-        if(!strcmp(key, "channel")) {
+        if(!strcmp(kind, "all")) {
             SDL_ShowWindow( window[channel_num]);                
             SDL_RaiseWindow( window[channel_num] );   
         }
@@ -4727,7 +4709,7 @@ static int handle_command(char * command)
 static int handle_commands(char * command)
 {
     char * pcommand;
-    char ptmp[100];
+    char ptmp[1024];
 
     av_log(NULL, AV_LOG_WARNING, "[Command RECV] %s\n", command);
 
