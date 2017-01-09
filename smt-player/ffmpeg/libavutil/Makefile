@@ -142,7 +142,17 @@ OBJS = adler32.o                                                        \
        xga_font_data.o                                                  \
        xtea.o                                                           \
        tea.o                                                            \
-       cJSON.o                                                            \
+       cJSON.o                                                          \
+       mxml-attr.o                                                      \
+	   mxml-entity.o                                                    \
+	   mxml-file.o                                                      \
+	   mxml-get.o                                                       \
+       mxml-index.o                                                     \
+	   mxml-node.o                                                      \
+	   mxml-search.o                                                    \
+	   mxml-set.o                                                       \
+       mxml-private.o                                                   \
+	   mxml-string.o                                                    \
 
 OBJS-$(!HAVE_ATOMICS_NATIVE)            += atomic.o                     \
 
