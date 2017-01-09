@@ -966,7 +966,9 @@ static int smt_write(URLContext *h, const uint8_t *buf, int size)
             //
             //static int counter = 0;
             //if(counter % 2 == 0) 
-            //    smt_pack_signal(h);
+#ifdef            SMT_PROTOCAL_SIGNAL
+                smt_pack_signal(h);
+#endif
             //counter++;
             //
             return size;

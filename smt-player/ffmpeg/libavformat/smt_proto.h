@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "url.h"
 
+//#define SMT_PROTOCAL_SIGNAL
 #ifdef SMT_PROTOCAL_SIGNAL
 #include "smt_signal.h"
 #endif
