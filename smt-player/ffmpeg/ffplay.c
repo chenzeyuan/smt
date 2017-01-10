@@ -4689,7 +4689,7 @@ static int handle_command(char * command)
             
         for(int i = 0 ; i <= nb_input_files; i++) {  
             if (i == channel_num) continue;                
-            if(!strcmp(kind, "all")) SDL_HideWindow( window[i] );
+            //if(!strcmp(kind, "all")) SDL_HideWindow( window[i] );
             global_is[i]->muted = 1;
         }  
         global_is[channel_num]->muted = 0;
