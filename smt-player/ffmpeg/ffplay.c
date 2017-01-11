@@ -1391,7 +1391,6 @@ static void switch_full_screen(VideoState *is)
     is->width  = default_width;
     is->height = default_height;
     main_screen = is->idx_screen;
-    is->muted = 0;
 }
 
 static void switch_sub_screen(VideoState *is)
