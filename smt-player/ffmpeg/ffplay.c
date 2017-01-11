@@ -278,6 +278,7 @@ typedef struct VideoState {
     int audio_volume;
     int muted;
     int muted2;
+    int audio_switch;
     struct AudioParams audio_src;
 #if CONFIG_AVFILTER
     struct AudioParams audio_filter_src;
@@ -2975,6 +2976,12 @@ static int stream_component_open(VideoState *is, int stream_index)
            || layout)
         is->muted = 1;
 
+        if(is->audio_switch) {
+            for(int i = 0 ; i < nb_input_files; i++) 
+               global_is[i]->muted = 1;
+            is->muted = 0;
+        }
+
         SDL_PauseAudioDevice(is->devID, 0); 
 
         break;
@@ -3396,6 +3403,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->audio_volume = SDL_MIX_MAXVOLUME;
     is->muted = 0;
     is->muted2 = 0;
+    is->audio_switch = 0;
     is->av_sync_type = av_sync_type;
     is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);
     if (!is->read_tid) {
@@ -4592,6 +4600,14 @@ static int handle_command(char * command)
             }
             global_is[nb_input_files+1]->idx_screen= nb_input_files+1;
             nb_input_files++;
+
+            if(cJSON_GetObjectItem(format,"audio")) {
+                char* is_audio = cJSON_GetObjectItem(format,"audio")->valuestring;
+                if(!strcmp (type, "false")) 
+                    return 1;                
+                av_log(NULL, AV_LOG_WARNING, "Audio switch\n");
+                global_is[nb_input_files]->audio_switch = 1;
+            }
         }
         else {
             return -1;
@@ -4682,7 +4698,7 @@ static int handle_command(char * command)
                  break;
         }                
         if(channel_num > nb_input_files || channel_num < 0) {
-            av_log(NULL, AV_LOG_WARNING, "[Show fail] cannot switch to %d beyond %d\n", channel_num, nb_input_files);  
+            av_log(NULL, AV_LOG_WARNING, "[Show fail] cannot show %s to %d beyond %d\n", name, channel_num, nb_input_files);  
             return -1;
         }
         av_log(NULL, AV_LOG_WARNING, "[Show] %s on %d : %d\n", name, channel_num, nb_input_files);  
@@ -4690,10 +4706,12 @@ static int handle_command(char * command)
         for(int i = 0 ; i <= nb_input_files; i++) {  
             if (i == channel_num) continue;                
             //if(!strcmp(kind, "all")) SDL_HideWindow( window[i] );
-            global_is[i]->muted = 1;
+            if(!strcmp(kind, "all") || !strcmp(kind, "audio"))
+                global_is[i]->muted = 1;
         }  
-        global_is[channel_num]->muted = 0;
-        if(!strcmp(kind, "all")) {
+        if(!strcmp(kind, "all") || !strcmp(kind, "audio"))
+            global_is[channel_num]->muted = 0;
+        if(!strcmp(kind, "all") || !strcmp(kind, "video")) {
             SDL_ShowWindow( window[channel_num]);                
             SDL_RaiseWindow( window[channel_num] );   
         }
