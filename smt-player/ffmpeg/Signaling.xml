@@ -5,7 +5,7 @@
 	</MPT>
 
 	<MPIT>
-		<PI PI_type="ci" PI_content_name="ci.xml" PI_content_path="/home/frank/work/smt/smt/smt-player/ffmpeg/"></PI>
-		<PI PI_type="html" PI_content_name="index.html" PI_content_path="/home/frank/work/smt/smt/smt-player/ffmpeg/"></PI>
+		<PI PI_type="ci" PI_content_name="ci.xml" PI_content_path="./"></PI>
+		<PI PI_type="html" PI_content_name="index.html" PI_content_path="./"></PI>
 	</MPIT>
 </Signaling>

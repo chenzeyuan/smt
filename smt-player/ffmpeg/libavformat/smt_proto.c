@@ -1260,10 +1260,12 @@ static smt_status smt_add_sig_packet(URLContext *h,smt_receive_entity *recv, smt
     smt_payload_sig *sig_payload = (smt_payload_sig *)&(p->payload);//
 
     unsigned char *payload_data = sig_payload->data; //
+    /*
     if(sig_payload->f_i == complete_data)
     {
     }
-    if(sig_payload->f_i == first_fragment)
+    */
+    if(sig_payload->f_i == first_fragment || sig_payload->f_i == complete_data)
     {
         if(p_signalling_message_buf) {
             if(p_signalling_message_buf->signal_buf){
@@ -1273,7 +1275,7 @@ static smt_status smt_add_sig_packet(URLContext *h,smt_receive_entity *recv, smt
             free(p_signalling_message_buf);
             p_signalling_message_buf = NULL;
         }
-        pa_message_t pa_message;
+        pa_message_t pa_message = {0};
         read_pa_message_header(&pa_message,(const char*)payload_data);
         p_signalling_message_buf = (signalling_message_buf_t*)av_mallocz(sizeof(signalling_message_buf_t));
         if(p_signalling_message_buf == NULL){
@@ -1285,28 +1287,30 @@ static smt_status smt_add_sig_packet(URLContext *h,smt_receive_entity *recv, smt
         p_signalling_message_buf->length = pa_message.length+PAh_BUFF_LEN;
         //add by drj
         p_signalling_message_buf->signal_buf = (unsigned char*)av_mallocz((pa_message.length+PAh_BUFF_LEN)*sizeof(unsigned char));
-        signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
+        //signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
     }
-    if(sig_payload->f_i == middle_fragment)
+    //if(sig_payload->f_i == middle_fragment)
     {
         signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
     }
-    if(sig_payload->f_i == last_fragment)
+    if(sig_payload->f_i == last_fragment || sig_payload->f_i == complete_data)
     {
-        signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
-        smt_sig * sig = av_mallocz(sizeof(smt_sig));
-        read_pa_message(sig,(const char*)p_signalling_message_buf->signal_buf);
-        if(p_signalling_message_buf) {
-            if(p_signalling_message_buf->signal_buf) {
-                free(p_signalling_message_buf->signal_buf);
-                p_signalling_message_buf->signal_buf = NULL;
+        if( p_signalling_message_buf && p_signalling_message_buf->signal_buf) {
+            //signalling_message_segment_append(p_signalling_message_buf, payload_data, sig_payload->MSG_length);
+            smt_sig * sig = av_mallocz(sizeof(smt_sig));
+            read_pa_message(sig,(const char*)p_signalling_message_buf->signal_buf);
+            if(p_signalling_message_buf) {
+                if(p_signalling_message_buf->signal_buf) {
+                    free(p_signalling_message_buf->signal_buf);
+                    p_signalling_message_buf->signal_buf = NULL;
+                }
+                free(p_signalling_message_buf); 
+                p_signalling_message_buf = NULL;
             }
-            free(p_signalling_message_buf); 
-            p_signalling_message_buf = NULL;
+            //printf("id = %u version = %u, length = %u numberoftables = %u\n",sig->message_id,sig->version,sig->length,sig->number_of_tables);
+            if(smt_callback_entity.sig_callback_fun)
+                smt_callback_entity.sig_callback_fun(h,sig);
         }
-        //printf("id = %u version = %u, length = %u numberoftables = %u\n",sig->message_id,sig->version,sig->length,sig->number_of_tables);
-        if(smt_callback_entity.sig_callback_fun)
-            smt_callback_entity.sig_callback_fun(h,sig);
     } 
     // if (pa_message.mp_table.MP_table_asset[0].asset_descriptors_length != 0)
     // {

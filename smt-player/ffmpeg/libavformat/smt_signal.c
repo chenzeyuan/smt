@@ -18,17 +18,52 @@
 #ifdef SMT_PROTOCAL_SIGNAL
 #include "smt_signal.h"
 #include "smt_getfile.h"
-#include "json.h"
+#include "libavutil/cJSON.h"
+#include "libavutil/mxml.h"
 #include "parse_flags.h"
-#include <libxml/xmlreader.h>
-#include <libxml/xmlmemory.h>
-#include <libxml/parser.h>
-#include <libxml/tree.h>
 
 
 
 #define max_level_id_num 1000
+#define SMT_SIGNALING_MAX_CONTENT_NUMBER 100
+#define freeif(x) {if(x) free(x);}
+
 extern smt_callback     smt_callback_entity;
+
+static int malloc_and_strcpy(char **dest, char *src) {
+    int len = 0;
+    if(!src) return 0;
+    len = strlen(src);
+    *dest = (char*) malloc(len + 1);
+    strcpy(*dest, src);
+    return len;
+}
+
+
+static int free_asset_info(asset_info_t *asset_info) {
+    int i;
+    if(!asset_info) return -1;
+    for(i = 0; i < asset_info->assets_count; i++) {
+        freeif((asset_info[i].asset_id));        
+        freeif((asset_info[i].media_type));
+        freeif((asset_info[i].asset_type));
+    }
+    free(asset_info);
+    return 0;
+}
+
+
+static int free_PI_info(PI_info_t *piInfo) {
+    int i;
+    if(!piInfo) return -1;
+    for(i = 0; i < piInfo->PI_content_count; i++) {
+        freeif((piInfo[i].PI_type));
+        freeif((piInfo[i].PI_content_name));
+        freeif((piInfo[i].PI_content_path));
+    }
+    free(piInfo);
+    return 0;
+}
 
 
 int init_pa_message(pa_message_t *pa_header,unsigned char *PAh)
@@ -96,7 +131,7 @@ int read_pa_message(pa_message_t *pa_message,const char *pa_message_buf)
 
 int free_pa_message(pa_message_t *pa_message)
 {
-    free(pa_message->table_header);
+    freeif(pa_message->table_header);
     pa_message->table_header = NULL;
     int i;
     for(i=0;i<pa_message->number_of_tables;i++)
@@ -168,7 +203,7 @@ int read_pa_table(pa_table_t *pa_table ,const char *PA_table_buf)
 int free_pa_table(pa_table_t *pa_table )
 {
 
-    free(pa_table->pat_content);
+    freeif(pa_table->pat_content);
     pa_table->pat_content = NULL;
     return 0;
 
@@ -248,6 +283,7 @@ int init_mp_table(mp_table_t *mp_table, unsigned char **mp_table_buf)
 
 int make_level_table(level_t* level,char *file)
 {
+#if 0
 	json_object *new_obj;
 	FILE *fp = fopen(file, "rb");
 	if(fp == NULL){
@@ -311,11 +347,11 @@ int make_level_table(level_t* level,char *file)
 			}
 			level_sequence_num+=count;
 		}
-//		free(level->level_id[i].level_sequence_num);
+//		freeif(level->level_id[i].level_sequence_num);
 //		level->level_id[i].level_sequence_num=NULL;
 	}
 	fclose(fp);
-
+#endif
 	return 0;
 }
 
@@ -376,10 +412,10 @@ int mpu_in_json(u_int32_t MPU_sequence_number,char *file)
 	}
 	for(i=0;i<level.level_num;i++)
 	{
-		free(level.level_id[i].level_sequence_num);
+		freeif(level.level_id[i].level_sequence_num);
 		level.level_id[i].level_sequence_num=NULL;
 	}
-	free(level.level_id);
+	freeif(level.level_id);
 	level.level_id=NULL;
     return -1;
 }
@@ -387,7 +423,7 @@ int mpu_in_json(u_int32_t MPU_sequence_number,char *file)
 int make_mp_table(mp_table_t* mp_table, asset_info_t* asset_info, char * file, u_int32_t MPU_sequence_number)  //changed
 {
 
-    int count = 0;
+    int i = 0;
 //    mp_table_t mp_table;
     mp_table->table_id=0x20;        //complete MP table
     mp_table->version=0x00;
@@ -398,36 +434,39 @@ int make_mp_table(mp_table_t* mp_table, asset_info_t* asset_info, char * file, u
 
     mp_table->MP_table_asset= (MP_table_asset_t *)malloc(sizeof(MP_table_asset_t )*(mp_table->number_of_assets));
 
-    for(count=0; count<(mp_table->number_of_assets);count++)
+    for(i=0; i<(mp_table->number_of_assets);i++)
     {
-        mp_table->MP_table_asset[count].Identifier_mapping = (Identifier_mapping_t *)malloc(sizeof(Identifier_mapping_t));
+        Identifier_mapping_byte_t * id_mapping_byte = NULL;
+        asset_id_t *assetid = NULL;
+        Identifier_mapping_t *id_mapping = (Identifier_mapping_t *)malloc(sizeof(Identifier_mapping_t));
+        mp_table->MP_table_asset[i].Identifier_mapping = id_mapping;
 
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_type=0x00;        //00 for asset_id
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte = (Identifier_mapping_byte_t *)malloc(sizeof(Identifier_mapping_byte_t));
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte->asset_id = (asset_id_t *)malloc(sizeof(asset_id_t));
+        id_mapping->identifier_type=0x00;        //00 for asset_id
+        id_mapping_byte = (Identifier_mapping_byte_t *)malloc(sizeof(Identifier_mapping_byte_t));
+        id_mapping->identifier_mapping_byte = id_mapping_byte;
+
+        assetid = (asset_id_t *)malloc(sizeof(asset_id_t));
         //asset_id_scheme is not correct now
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_scheme = 0;
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_length = strlen((asset_info+count)->asset_id);
-        mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_byte = (unsigned char*)malloc(strlen((asset_info+count)->asset_id)*sizeof(char));
-        memcpy(mp_table->MP_table_asset[count].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_byte,(asset_info+count)->asset_id,
-                strlen((asset_info+count)->asset_id));
+        assetid->asset_id_scheme = 0;
+        assetid->asset_id_length = malloc_and_strcpy(&(assetid->asset_id_byte), asset_info[i].asset_id);
+        id_mapping_byte->asset_id = assetid;
 
-        char type_temp[4] = {*((asset_info+count)->asset_type),*((asset_info+count)->asset_type+1),*((asset_info+count)->asset_type+2),*((asset_info+count)->asset_type+3)};
-        mp_table->MP_table_asset[count].asset_type = MP4_FOURCC(type_temp[1],type_temp[2],type_temp[3],type_temp[4]);
+        char type_temp[4] = {*((asset_info+i)->asset_type),*((asset_info+i)->asset_type+1),*((asset_info+i)->asset_type+2),*((asset_info+i)->asset_type+3)};
+        mp_table->MP_table_asset[i].asset_type = MP4_FOURCC(type_temp[1],type_temp[2],type_temp[3],type_temp[4]);
 
-        mp_table->MP_table_asset[count].reserved = 0;
-        mp_table->MP_table_asset[count].asset_clock_relation_flag= 0;
+        mp_table->MP_table_asset[i].reserved = 0;
+        mp_table->MP_table_asset[i].asset_clock_relation_flag= 0;
 
-        mp_table->MP_table_asset[count].asset_loaction = (asset_location_t*)malloc(sizeof(asset_location_t));
-        mp_table->MP_table_asset[count].asset_loaction->location_count = 1;
+        mp_table->MP_table_asset[i].asset_loaction = (asset_location_t*)malloc(sizeof(asset_location_t));
+        mp_table->MP_table_asset[i].asset_loaction->location_count = 1;
         //00 for packet_id
-        mp_table->MP_table_asset[count].asset_loaction->general_location_info = (general_location_info_t *)malloc(sizeof(general_location_info_t));
-        mp_table->MP_table_asset[count].asset_loaction->general_location_info->location_type = 0x00;
-        mp_table->MP_table_asset[count].asset_loaction->general_location_info->general_location_info_byte = (general_location_info_byte_t *)malloc(sizeof(general_location_info_byte_t));
-        mp_table->MP_table_asset[count].asset_loaction->general_location_info->general_location_info_byte->packet_id = (asset_info+count)->packet_id;
+        mp_table->MP_table_asset[i].asset_loaction->general_location_info = (general_location_info_t *)malloc(sizeof(general_location_info_t));
+        mp_table->MP_table_asset[i].asset_loaction->general_location_info->location_type = 0x00;
+        mp_table->MP_table_asset[i].asset_loaction->general_location_info->general_location_info_byte = (general_location_info_byte_t *)malloc(sizeof(general_location_info_byte_t));
+        mp_table->MP_table_asset[i].asset_loaction->general_location_info->general_location_info_byte->packet_id = (asset_info+i)->packet_id;
 
-        //mp_table->MP_table_asset[count].asset_descriptors_length= 0;
-        //mp_table->MP_table_asset[count].asset_descriptors_byte = NULL;
+        //mp_table->MP_table_asset[i].asset_descriptors_length= 0;
+        //mp_table->MP_table_asset[i].asset_descriptors_byte = NULL;
         MUR_descriptors_t mur_descriptor;
         int flag;
 		if (file==NULL)
@@ -448,9 +487,9 @@ int make_mp_table(mp_table_t* mp_table, asset_info_t* asset_info, char * file, u
 			mur_descriptor.edit_list->edit_list_id=flag;
 			mur_descriptor.edit_list->mpu_sequence_number=MPU_sequence_number;
 
-			mp_table->MP_table_asset[count].asset_descriptors_length= 4+mur_descriptor.descriptor_length;
+			mp_table->MP_table_asset[i].asset_descriptors_length= 4+mur_descriptor.descriptor_length;
 			//printf("mp_table->MP_table_asset[count].asset_descriptors_length=%d\n",mp_table->MP_table_asset[count].asset_descriptors_length);
-			unsigned char* mur_buf=(unsigned char *)malloc(mp_table->MP_table_asset[count].asset_descriptors_length*sizeof(char));
+			unsigned char* mur_buf=(unsigned char *)malloc(mp_table->MP_table_asset[i].asset_descriptors_length*sizeof(char));
 			if (mur_buf==NULL)
 			{
 				printf("error in malloc *mur_buf\n");
@@ -459,7 +498,6 @@ int make_mp_table(mp_table_t* mp_table, asset_info_t* asset_info, char * file, u
 			*((u_int16_t*)&mur_buf[0])=htons(mur_descriptor.descriptor_tag);
 			*((u_int16_t*)&mur_buf[2])=htons(mur_descriptor.descriptor_length);
 			u_int32_t seekpoint=4;
-			int i;
 			for(i=0;i<EDIT_LIST_NUM;i++)
 			{
 				*((u_int8_t*)&mur_buf[seekpoint])=mur_descriptor.edit_list[i].edit_list_id;
@@ -467,22 +505,22 @@ int make_mp_table(mp_table_t* mp_table, asset_info_t* asset_info, char * file, u
 				*((u_int32_t*)&mur_buf[seekpoint])=htonl(mur_descriptor.edit_list[i].mpu_sequence_number);
 				seekpoint+=sizeof(u_int32_t);
 			}
-			free(mur_descriptor.edit_list);
+			freeif(mur_descriptor.edit_list);
 			mur_descriptor.edit_list=NULL;
-			mp_table->MP_table_asset[count].asset_descriptors_byte = (unsigned char *)malloc(mp_table->MP_table_asset[count].asset_descriptors_length*sizeof(unsigned char));
-			if (mp_table->MP_table_asset[count].asset_descriptors_byte==NULL)
+			mp_table->MP_table_asset[i].asset_descriptors_byte = (unsigned char *)malloc(mp_table->MP_table_asset[i].asset_descriptors_length*sizeof(unsigned char));
+			if (mp_table->MP_table_asset[i].asset_descriptors_byte==NULL)
 			{
 				printf("error in malloc mp_table->MP_table_asset[count].asset_descriptors_byte\n");
 				exit(0);
 			}
-			memcpy(mp_table->MP_table_asset[count].asset_descriptors_byte,mur_buf,mp_table->MP_table_asset[count].asset_descriptors_length);
-			free(mur_buf);
+			memcpy(mp_table->MP_table_asset[i].asset_descriptors_byte,mur_buf,mp_table->MP_table_asset[i].asset_descriptors_length);
+			freeif(mur_buf);
 			mur_buf=NULL;
 		}
 		else
 		{
-			mp_table->MP_table_asset[count].asset_descriptors_byte=NULL;
-			mp_table->MP_table_asset[count].asset_descriptors_length=0;
+			mp_table->MP_table_asset[i].asset_descriptors_byte=NULL;
+			mp_table->MP_table_asset[i].asset_descriptors_length=0;
 		}	
 
     }
@@ -515,7 +553,7 @@ int read_MUR_descriptors(MUR_descriptors_t *mur_descriptor,const char *mur_buf)
 		//printf("mur_descriptor->edit_list[i].edit_list_id=%d\n",mur_descriptor->edit_list[i].edit_list_id);
 		//printf("mur_descriptor->edit_list[i].mpu_sequence_number=%d\n",mur_descriptor->edit_list[i].mpu_sequence_number);
 	}
-	//free(mur_descriptor->edit_list);
+	//freeif(mur_descriptor->edit_list);
 	//mur_descriptor->edit_list=NULL;
 	return 0;
 }
@@ -609,33 +647,33 @@ int free_mp_table(mp_table_t *mp_table )
     u_int32_t  i, location_num, j;
     for (i=0;i<mp_table->number_of_assets;i++)
         {
-//            free(mp_table->MP_table_asset[i].Identifier_mapping.URL_byte);
-//            free(mp_table->MP_table_asset[i].asset_descriptors_byte);
+//            freeif(mp_table->MP_table_asset[i].Identifier_mapping.URL_byte);
+//            freeif(mp_table->MP_table_asset[i].asset_descriptors_byte);
             if(mp_table->MP_table_asset[i].Identifier_mapping->identifier_type == 0x00)
             {
-                free(mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_byte);
+                freeif(mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_byte);
                 mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte->asset_id->asset_id_byte = NULL;
             }
-            free(mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte);
+            freeif(mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte);
             mp_table->MP_table_asset[i].Identifier_mapping->identifier_mapping_byte = NULL;
-            free(mp_table->MP_table_asset[i].Identifier_mapping);
+            freeif(mp_table->MP_table_asset[i].Identifier_mapping);
             mp_table->MP_table_asset[i].Identifier_mapping = NULL;
 
             location_num = mp_table->MP_table_asset[i].asset_loaction->location_count;
             for(j=0;j<location_num;j++)
             {
-                free(mp_table->MP_table_asset[i].asset_loaction->general_location_info[j].general_location_info_byte);
+                freeif(mp_table->MP_table_asset[i].asset_loaction->general_location_info[j].general_location_info_byte);
                 mp_table->MP_table_asset[i].asset_loaction->general_location_info[j].general_location_info_byte = NULL;
-            //    free(&(mp_table->MP_table_asset[i].asset_loaction->general_location_info[j]));
+            //    freeif(&(mp_table->MP_table_asset[i].asset_loaction->general_location_info[j]));
             }
-            free(mp_table->MP_table_asset[i].asset_loaction->general_location_info);
+            freeif(mp_table->MP_table_asset[i].asset_loaction->general_location_info);
             mp_table->MP_table_asset[i].asset_loaction->general_location_info = NULL;
-            free(mp_table->MP_table_asset[i].asset_loaction);
+            freeif(mp_table->MP_table_asset[i].asset_loaction);
             mp_table->MP_table_asset[i].asset_loaction = NULL;
-            free(mp_table->MP_table_asset[i].asset_descriptors_byte);
+            freeif(mp_table->MP_table_asset[i].asset_descriptors_byte);
             mp_table->MP_table_asset[i].asset_descriptors_byte = NULL;
         }
-    free(mp_table->MP_table_asset);
+    freeif(mp_table->MP_table_asset);
     mp_table->MP_table_asset = NULL;
     return 0;
 
@@ -698,7 +736,7 @@ int init_mpi_table(mpi_table_t *mpi_table, unsigned char **mpi_table_buf)
     return 0;
 }
 
-int make_mpi_table(mpi_table_t* mpi_table, PI_info_t* PI_info)
+int make_mpi_table(mpi_table_t* mpi_table, PI_info_t* piInfo)
 {
     mpi_table->table_id=0x10;
     mpi_table->version=0;
@@ -709,47 +747,40 @@ int make_mpi_table(mpi_table_t* mpi_table, PI_info_t* PI_info)
 
     //MPI table descriptors is not used now
     mpi_table->MPIT_descriptor = (MPIT_descriptors_t *)malloc(sizeof(MPIT_descriptors_t));
+    memset(mpi_table->MPIT_descriptor, 0, sizeof(MPIT_descriptors_t));
     mpi_table->MPIT_descriptor->descriptors_length=0;
     mpi_table->MPIT_descriptor->MPIT_descriptors_byte=NULL;
-    mpi_table->PI_content_count=PI_info->PI_cotent_count;
+    mpi_table->PI_content_count=piInfo->PI_content_count;
     mpi_table->PI_content= (PI_content_t *)malloc(sizeof(PI_content_t )*mpi_table->PI_content_count);
-        if(mpi_table->PI_content==NULL)
+    memset(mpi_table->PI_content, 0, sizeof(PI_content_t )*mpi_table->PI_content_count);
+    if(mpi_table->PI_content==NULL)
+    {
+        puts ("Memory allocation failed.");
+        exit (EXIT_FAILURE);
+    }
+    int i=0, pi_length_tmp=0;
+
+    for(i=0;i<mpi_table->PI_content_count;i++)
+    {
+        mpi_table->PI_content[i].PI_content_type_length = malloc_and_strcpy(&(mpi_table->PI_content[i].PI_content_type_byte), piInfo[i].PI_content_type);
+        mpi_table->PI_content[i].PI_content_name_length = malloc_and_strcpy(&(mpi_table->PI_content[i].PI_content_name_byte), piInfo[i].PI_content_name);
+        mpi_table->PI_content[i].PI_content_descriptors_length = 0;
+        mpi_table->PI_content[i].PI_content_descriptors_byte = NULL;
+
+        int readFlag = ReadFile(strcatex(piInfo[i].PI_content_path,piInfo[i].PI_content_name),(char **)&(mpi_table->PI_content[i].PI_content_byte),
+                &mpi_table->PI_content[i].PI_content_length);
+        if(readFlag == -1)
         {
-            puts ("Memory allocation failed.");
-             exit (EXIT_FAILURE);
-        }
-        int pi_count=0, pi_length_tmp=0;
-
-        for(pi_count=0;pi_count<mpi_table->PI_content_count;pi_count++)
-        {
-            mpi_table->PI_content[pi_count].PI_content_type_length = strlen(PI_info[pi_count].PI_content_type) + 1;
-            mpi_table->PI_content[pi_count].PI_content_type_byte = (unsigned char*)malloc((mpi_table->PI_content[pi_count].PI_content_type_length)*sizeof(unsigned char));
-            memcpy(mpi_table->PI_content[pi_count].PI_content_type_byte,PI_info[pi_count].PI_content_type,mpi_table->PI_content[pi_count].PI_content_type_length);
-			mpi_table->PI_content[pi_count].PI_content_type_byte[mpi_table->PI_content[pi_count].PI_content_type_length] = '\0';
-
-            mpi_table->PI_content[pi_count].PI_content_name_length=strlen(PI_info[pi_count].PI_content_name) + 1;
-            mpi_table->PI_content[pi_count].PI_content_name_byte = (unsigned char*)malloc(mpi_table->PI_content[pi_count].PI_content_name_length*sizeof(unsigned char));
-            memcpy(mpi_table->PI_content[pi_count].PI_content_name_byte,PI_info[pi_count].PI_content_name,mpi_table->PI_content[pi_count].PI_content_name_length);
-			mpi_table->PI_content[pi_count].PI_content_name_byte[mpi_table->PI_content[pi_count].PI_content_name_length] = '\0';
-
-
-            mpi_table->PI_content[pi_count].PI_content_descriptors_length = 0;
-            mpi_table->PI_content[pi_count].PI_content_descriptors_byte = NULL;
-
-            int readFlag = ReadFile(strcatex(PI_info[pi_count].PI_content_path,PI_info[pi_count].PI_content_name),(char **)&(mpi_table->PI_content[pi_count].PI_content_byte),
-                        &mpi_table->PI_content[pi_count].PI_content_length);
-            if(readFlag == -1)
-            {
-                //PRINTF("can't find ci or html\n");
-                exit(0);
-            }
-
-            pi_length_tmp += mpi_table->PI_content[pi_count].PI_content_type_length+mpi_table->PI_content[pi_count].PI_content_name_length+ \
-                    mpi_table->PI_content[pi_count].PI_content_descriptors_length+mpi_table->PI_content[pi_count].PI_content_length;
+            //PRINTF("can't find ci or html\n");
+            exit(0);
         }
 
-        mpi_table->length = 1+2+mpi_table->MPIT_descriptor->descriptors_length+1+6*mpi_table->PI_content_count+pi_length_tmp;
-        return 0;
+        pi_length_tmp += mpi_table->PI_content[i].PI_content_type_length+mpi_table->PI_content[i].PI_content_name_length+ \
+                         mpi_table->PI_content[i].PI_content_descriptors_length+mpi_table->PI_content[i].PI_content_length;
+    }
+
+    mpi_table->length = 1+2+mpi_table->MPIT_descriptor->descriptors_length+1+6*mpi_table->PI_content_count+pi_length_tmp;
+    return 0;
 }
 
 int read_mpi_table(mpi_table_t *mpi_table, const char *mpi_table_buf)
@@ -856,33 +887,33 @@ int free_mpi_table(mpi_table_t *mpi_table)
 //
     if(mpi_table->MPIT_descriptor->MPIT_descriptors_byte!=NULL)
     {
-        free(mpi_table->MPIT_descriptor->MPIT_descriptors_byte);
+        freeif(mpi_table->MPIT_descriptor->MPIT_descriptors_byte);
         mpi_table->MPIT_descriptor->MPIT_descriptors_byte =  NULL;
     }
-    free(mpi_table->MPIT_descriptor);
+    freeif(mpi_table->MPIT_descriptor);
     mpi_table->MPIT_descriptor = NULL;
 
     for (i=0;i<mpi_table->PI_content_count;i++)
     {
-        free(mpi_table->PI_content[i].PI_content_type_byte);
+        freeif(mpi_table->PI_content[i].PI_content_type_byte);
         mpi_table->PI_content[i].PI_content_type_byte = NULL;
-        free(mpi_table->PI_content[i].PI_content_name_byte);
+        freeif(mpi_table->PI_content[i].PI_content_name_byte);
         mpi_table->PI_content[i].PI_content_name_byte = NULL;
         if(mpi_table->PI_content[i].PI_content_descriptors_byte != NULL)
         {
-            free(mpi_table->PI_content[i].PI_content_descriptors_byte);
+            freeif(mpi_table->PI_content[i].PI_content_descriptors_byte);
             mpi_table->PI_content[i].PI_content_descriptors_byte = NULL;
         }
-        if(!mpi_table->PI_content[i].PI_content_byte) free(mpi_table->PI_content[i].PI_content_byte);
+        if(!mpi_table->PI_content[i].PI_content_byte) freeif(mpi_table->PI_content[i].PI_content_byte);
         mpi_table->PI_content[i].PI_content_byte = NULL;
     }
-    free(mpi_table->PI_content);
+    freeif(mpi_table->PI_content);
     mpi_table->PI_content = NULL;
 
     return 0;
 }
-int send_signal(URLContext *h, pa_message_t *pa_header,unsigned char *pa_message_buf,u_int32_t *packet_sequence_number,u_int32_t *packet_counter,u_int32_t packet_id);
-int send_signal(URLContext *h, pa_message_t *pa_header,unsigned char *pa_message_buf,u_int32_t *packet_sequence_number,u_int32_t *packet_counter,u_int32_t packet_id)
+
+static int send_signal(URLContext *h, pa_message_t *pa_header,unsigned char *pa_message_buf,u_int32_t *packet_sequence_number,u_int32_t *packet_counter,u_int32_t packet_id)
 {
     int pa_sequence_number=(pa_header->length+4+MMTP_BUFF_LEN-1)/(unsigned int)MMTP_BUFF_LEN;;
     int pa_length=pa_header->length+PAh_BUFF_LEN;
@@ -1016,13 +1047,9 @@ int send_signal(URLContext *h, pa_message_t *pa_header,unsigned char *pa_message
 
 }
 
-void generate_and_send_pa_message(URLContext *h, 
+static void generate_and_send_pa_message(URLContext *h, 
                               asset_info_t    *asset_info, 
-                              PI_info_t       *PI_info,
-                              u_int32_t       *p_packet_counter);
-void generate_and_send_pa_message(URLContext *h, 
-                              asset_info_t    *asset_info, 
-                              PI_info_t       *PI_info,
+                              PI_info_t       *piInfo,
                               u_int32_t       *p_packet_counter) {
     u_int32_t packet_sequence_number_signal=0;
     //PA table
@@ -1040,6 +1067,8 @@ void generate_and_send_pa_message(URLContext *h,
     char * file  = NULL;
     int mpu_sequence_number = 0;
     make_mp_table(&mp_table,asset_info,file,mpu_sequence_number);
+    free_asset_info(asset_info);
+    asset_info = NULL;
     //-------------------
     unsigned char *mp_table_buf;
     mp_table_buf= (unsigned  char*) malloc((4+mp_table.length)*sizeof( unsigned  char));
@@ -1053,9 +1082,11 @@ void generate_and_send_pa_message(URLContext *h,
 
     free_mp_table(&mp_table);
     //MPI table
-    mpi_table_t mpi_table;
+    mpi_table_t mpi_table = {0};
 
-    make_mpi_table(&mpi_table, PI_info);
+    make_mpi_table(&mpi_table, piInfo);
+    free_PI_info(piInfo);
+    piInfo = NULL;
     unsigned char *mpi_table_buf = NULL;
     mpi_table_buf= (unsigned  char*) malloc((4+mpi_table.length)*sizeof( unsigned  char));
     if(mpi_table_buf==NULL)
@@ -1112,7 +1143,7 @@ void generate_and_send_pa_message(URLContext *h,
                 &packet_sequence_number_signal,
                 p_packet_counter,
                 Signal_PACKET_ID);
-    if(NULL != mp_table_buf) free(mp_table_buf);
+    if(NULL != mp_table_buf) freeif(mp_table_buf);
 }
 
 asset_info_t    asset_info_base[2]= {
@@ -1156,8 +1187,9 @@ PI_info_t       PI_info_base[2] = {
     }  
 };
 
-int parsexml(char* file, asset_info_t* asset_info_base, PI_info_t* PI_info_base)
+static int parsexml0(char* file, asset_info_t* asset_info_base, PI_info_t* PI_info_base)
 {
+#if 0
         xmlDocPtr doc;
         xmlNodePtr curNode;
         xmlChar *szKey;
@@ -1211,48 +1243,107 @@ int parsexml(char* file, asset_info_t* asset_info_base, PI_info_t* PI_info_base)
 		i = i+1;
 	}
 	xmlFreeDoc(doc);
+#endif
 	return 0;
+}
+
+
+
+
+int parsexml(char* file, asset_info_t* asset_info, PI_info_t* piInfo)
+{
+    FILE *fp;
+    mxml_node_t *doc = NULL, *Signaling_Node = NULL;
+    mxml_node_t *MPT_Node = NULL, *MPIT_Node = NULL;
+    mxml_node_t *curNode = NULL;
+    int i = 0, j;
+
+    if(!file) return -1;
+    if((fp = fopen(file, "r")) == NULL) {
+        av_log(NULL, AV_LOG_ERROR, "\n can not open %s\n", file);
+        return -1;
+    }
+    doc = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);   
+    fclose(fp);
+    if (!doc)
+    {
+        av_log(NULL, AV_LOG_ERROR, "\n Unable to read XML file with default callback.\n");
+        return -1;
+    } else {
+        char *name = mxmlGetElement(doc);
+        if(name && 0 == strcmp(name, "Signaling")){
+            Signaling_Node = doc;
+        } else {
+            Signaling_Node = mxmlFindElement(doc, doc, "Signaling",NULL, NULL,MXML_DESCEND);
+        }
+    }
+
+    if(NULL == Signaling_Node ) {
+        av_log(NULL, AV_LOG_ERROR, "\n Unable to find Signaling node in xml file\n");
+        mxmlDelete(doc);
+        return -1;
+    }
+    
+    MPT_Node = mxmlFindElement(Signaling_Node, doc, "MPT",NULL, NULL,MXML_DESCEND);
+    if(NULL == MPT_Node ) {
+        av_log(NULL, AV_LOG_ERROR, "\n Unable to find MPT node in xml file\n");
+    } else {
+        i = 0;
+        curNode = mxmlGetFirstChild(MPT_Node);
+        while(curNode && i<SMT_SIGNALING_MAX_CONTENT_NUMBER ) {
+            char *name = mxmlGetElement(curNode);
+            if(name && 0 == strcmp(name, "asset")){
+                char *packet_id_string = NULL;         
+                malloc_and_strcpy(&(asset_info[i].asset_id), mxmlElementGetAttr(curNode,"asset_id"));
+                malloc_and_strcpy(&(asset_info[i].media_type), mxmlElementGetAttr(curNode,"media_type"));
+                malloc_and_strcpy(&(asset_info[i].asset_type), mxmlElementGetAttr(curNode,"asset_type"));
+                packet_id_string           =  mxmlElementGetAttr(curNode,"packet_id");
+                asset_info[i].packet_id    =  packet_id_string?atoi(packet_id_string):0;
+                i++;
+            }
+            curNode = mxmlGetNextSibling(curNode);
+        }
+        for(j=0; j<i; j++) {
+            asset_info[j].assets_count = i;
+        }
+    }
+
+    MPIT_Node = mxmlFindElement(Signaling_Node, doc, "MPIT",NULL, NULL,MXML_DESCEND);
+    if(NULL == MPIT_Node ) {
+        av_log(NULL, AV_LOG_ERROR, "\n Unable to find MPIT node in xml file\n");
+    } else {
+        i = 0;
+        curNode = mxmlGetFirstChild(MPIT_Node);
+        while(curNode && i<SMT_SIGNALING_MAX_CONTENT_NUMBER) {
+            char *name = mxmlGetElement(curNode);
+            if(name && 0 == strcmp(name, "PI")){
+                malloc_and_strcpy(&(piInfo[i].PI_type),         mxmlElementGetAttr(curNode,"PI_type"));
+                malloc_and_strcpy(&(piInfo[i].PI_content_name), mxmlElementGetAttr(curNode,"PI_content_name"));
+                malloc_and_strcpy(&(piInfo[i].PI_content_path), mxmlElementGetAttr(curNode,"PI_content_path"));
+                i++;
+            }
+            curNode = mxmlGetNextSibling(curNode);
+        }
+        for(j=0; j<i; j++ ) piInfo[j].PI_content_count = i;
+    }
+    mxmlDelete(doc);
+    return 0;
 }
 
 void generate_and_send_signal(URLContext *h)
 {
-    parsexml("/home/frank/work/smt/smt/smt-player/ffmpeg/Signaling.xml", asset_info_base, PI_info_base);
     u_int32_t       packet_counter;
-    int i;
     asset_info_t *asset_info = NULL;
-    PI_info_t    *PI_info = NULL;
-    asset_info  = (asset_info_t*) malloc(2 * sizeof(asset_info_t));
-    memcpy(asset_info, asset_info_base, 2 * sizeof(asset_info_t));
-    PI_info = (PI_info_t*) malloc(2 * sizeof(PI_info_t));
-    memcpy(PI_info, PI_info_base, 2* sizeof(PI_info_t));
-    for(i = 0; i < 2; i++) 
-    {
-        asset_info[i].asset_id = (char*) malloc(strlen(asset_info_base[i].asset_id) + 1);
-        strcpy(asset_info[i].asset_id, asset_info_base[i].asset_id);
-        asset_info[i].media_type = (char*) malloc(strlen(asset_info_base[i].media_type) + 1);
-        strcpy(asset_info[i].media_type, asset_info_base[i].media_type);
-        asset_info[i].asset_type = (char*) malloc(strlen(asset_info_base[i].asset_type) + 1);
-        strcpy(asset_info[i].asset_type, asset_info_base[i].asset_type);
-        asset_info[i].asset_send_begintime= (char*) malloc(strlen(asset_info_base[i].asset_send_begintime) + 1);
-        strcpy(asset_info[i].asset_send_begintime, asset_info_base[i].asset_send_begintime);
-        asset_info[i].asset_send_endtime= (char*) malloc(strlen(asset_info_base[i].asset_send_endtime) + 1);
-        strcpy(asset_info[i].asset_send_endtime, asset_info_base[i].asset_send_endtime);
-    }
-    for(i = 0; i < 2; i++) 
-    {
-        PI_info[i].PI_content_type = (char*)malloc(strlen(PI_info_base[i].PI_content_type) + 1);
-        strcpy(PI_info[i].PI_content_type, PI_info_base[i].PI_content_type);
-        PI_info[i].PI_content_type[strlen(PI_info_base[i].PI_content_type) + 1] = '\0';
-        PI_info[i].PI_type = (char*)malloc(strlen(PI_info_base[i].PI_type) + 1);
-        strcpy(PI_info[i].PI_type, PI_info_base[i].PI_type);
-        PI_info[i].PI_content_name = (char*)malloc(strlen(PI_info_base[i].PI_content_name) + 1);
-        strcpy(PI_info[i].PI_content_name, PI_info_base[i].PI_content_name);
-        PI_info[i].PI_content_path = (char*)malloc(strlen(PI_info_base[i].PI_content_path) + 1);
-        strcpy(PI_info[i].PI_content_path, PI_info_base[i].PI_content_path);
-    }
+    PI_info_t    *piInfo = NULL;
+    asset_info  = (asset_info_t*) malloc(SMT_SIGNALING_MAX_CONTENT_NUMBER  * sizeof(asset_info_t));
+    memset(asset_info, 0, SMT_SIGNALING_MAX_CONTENT_NUMBER * sizeof(asset_info_t));
+    piInfo     = (PI_info_t*)    malloc(SMT_SIGNALING_MAX_CONTENT_NUMBER * sizeof(PI_info_t));
+    memset(piInfo, 0, SMT_SIGNALING_MAX_CONTENT_NUMBER * sizeof(PI_info_t));
+    parsexml("./Signaling.xml", asset_info, piInfo);
+
     generate_and_send_pa_message(h, 
                               asset_info, 
-                              PI_info,
+                              piInfo,
                               &packet_counter);
 }
 

@@ -88,7 +88,7 @@ typedef struct Asset_info
 
 typedef struct PI_info
 {
-		u_int8_t PI_cotent_count;
+		u_int8_t PI_content_count;
         char *PI_content_type;
         char *PI_type;
         char *PI_content_name;
