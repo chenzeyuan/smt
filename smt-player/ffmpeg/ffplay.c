@@ -278,7 +278,7 @@ typedef struct VideoState {
     int audio_volume;
     int muted;
     int muted2;
-    int audio_switch;
+    int add_kind;    //0:none 1:video 2:audio 3:all
     struct AudioParams audio_src;
 #if CONFIG_AVFILTER
     struct AudioParams audio_filter_src;
@@ -1450,6 +1450,8 @@ static int video_open(VideoState *is)
 
     if (!window[is->idx_screen]) {
         int flags =  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
+        if(is->add_kind == 0 || is->add_kind == 2)
+            flags |= SDL_WINDOW_HIDDEN;
         if (!window_title)
             window_title = is->filename;
 
@@ -1555,7 +1557,7 @@ static int video_open(VideoState *is)
                             break;
                         }
                     }
-                    if(show) {
+                    if(show && is->add_kind < 0) {
                         refresh_video();
                     }
                 }
@@ -1583,7 +1585,7 @@ static int video_open(VideoState *is)
                             break;
                         }
                     }
-                    if(show) {
+                    if(show && is->add_kind < 0) {
                         refresh_video();
                     }
                 }
@@ -2975,7 +2977,7 @@ static int stream_component_open(VideoState *is, int stream_index)
            || layout)
         is->muted = 1;
 
-        if(is->audio_switch) {
+        if(is->add_kind > 1) {
             for(int i = 0 ; i < nb_input_files; i++) 
                global_is[i]->muted = 1;
             is->muted = 0;
@@ -3402,7 +3404,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->audio_volume = SDL_MIX_MAXVOLUME;
     is->muted = 0;
     is->muted2 = 0;
-    is->audio_switch = 0;
+    is->add_kind = -1;
     is->av_sync_type = av_sync_type;
     is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);
     if (!is->read_tid) {
@@ -4591,22 +4593,29 @@ static int handle_command(char * command)
                 sprintf( full_address, "smt://%s@%s", server, name + 6);
             }
             input_filename[nb_input_files+1] = av_strdup(name);
-            
+                        
             global_is[nb_input_files+1] = stream_open(full_address, file_iformat);
             if (!global_is[nb_input_files+1]) {
                 av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
                 do_all_exit(global_is);
             }
+            
+            if(cJSON_GetObjectItem(format,"kind")) {
+                char* kind = cJSON_GetObjectItem(format,"kind")->valuestring;
+                if(!strcmp (type, "none")) 
+                    global_is[nb_input_files+1]->add_kind = 0;
+                else if(!strcmp (type, "video")) 
+                    global_is[nb_input_files+1]->add_kind = 1;
+                else if(!strcmp (type, "audio")) 
+                    global_is[nb_input_files+1]->add_kind = 2;
+                else if(!strcmp (type, "all")) 
+                    global_is[nb_input_files+1]->add_kind = 3;
+            }
+            else {                
+                global_is[nb_input_files+1]->add_kind = 1;
+            }
             global_is[nb_input_files+1]->idx_screen= nb_input_files+1;
             nb_input_files++;
-
-            if(cJSON_GetObjectItem(format,"audio")) {
-                char* is_audio = cJSON_GetObjectItem(format,"audio")->valuestring;
-                if(!strcmp (type, "false")) 
-                    return 1;                
-                av_log(NULL, AV_LOG_WARNING, "Audio switch\n");
-                global_is[nb_input_files]->audio_switch = 1;
-            }
         }
         else {
             return -1;
@@ -4881,6 +4890,7 @@ int main(int argc, char **argv)
             do_all_exit(global_is);
         }
         global_is[i]->idx_screen= i;
+        av_usleep(1000000);
         //SDL_CreateThread(video_display_thread, "sub video display", is[i]);
     }
 
