@@ -75,7 +75,7 @@ extern int64_t begin_time;
 #define MIN_FRAMES 25
 #define EXTERNAL_CLOCK_MIN_FRAMES 2
 #define EXTERNAL_CLOCK_MAX_FRAMES 10
-#define MAX_SCREEN_FLOWS  8
+#define MAX_SCREEN_FLOWS  16
 #define SUB_SCREEN_BORDER_SIZE  50
 
 /* Minimum SDL audio buffer size, in samples. */
@@ -2974,8 +2974,9 @@ static int stream_component_open(VideoState *is, int stream_index)
             goto fail;
 
         if((layout == 0 && is->idx_screen != 0) 
-           || layout)
-        is->muted = 1;
+           || layout || is->add_kind == 1 || is->add_kind == 0) {
+            is->muted = 1;
+        }
 
         if(is->add_kind > 1) {
             for(int i = 0 ; i < nb_input_files; i++) 
@@ -4600,20 +4601,20 @@ static int handle_command(char * command)
                 do_all_exit(global_is);
             }
             
-            if(cJSON_GetObjectItem(format,"kind")) {
+            if(cJSON_GetObjectItem(format,"kind")) {              
                 char* kind = cJSON_GetObjectItem(format,"kind")->valuestring;
-                if(!strcmp (type, "none")) 
+                if(!strcmp (kind, "none")) 
                     global_is[nb_input_files+1]->add_kind = 0;
-                else if(!strcmp (type, "video")) 
+                else if(!strcmp (kind, "video")) 
                     global_is[nb_input_files+1]->add_kind = 1;
-                else if(!strcmp (type, "audio")) 
+                else if(!strcmp (kind, "audio")) 
                     global_is[nb_input_files+1]->add_kind = 2;
-                else if(!strcmp (type, "all")) 
+                else if(!strcmp (kind, "all")) 
                     global_is[nb_input_files+1]->add_kind = 3;
             }
             else {                
                 global_is[nb_input_files+1]->add_kind = 1;
-            }
+            }            
             global_is[nb_input_files+1]->idx_screen= nb_input_files+1;
             nb_input_files++;
         }
@@ -4709,7 +4710,7 @@ static int handle_command(char * command)
             av_log(NULL, AV_LOG_WARNING, "[Show fail] cannot show %s to %d beyond %d\n", name, channel_num, nb_input_files);  
             return -1;
         }
-        av_log(NULL, AV_LOG_WARNING, "[Show] %s on %d : %d\n", name, channel_num, nb_input_files);  
+        av_log(NULL, AV_LOG_WARNING, "[Show] %s kind: %s on %d : %d\n", name, kind, channel_num, nb_input_files);  
             
         for(int i = 0 ; i <= nb_input_files; i++) {  
             if (i == channel_num) continue;                
@@ -4717,8 +4718,10 @@ static int handle_command(char * command)
             if(!strcmp(kind, "all") || !strcmp(kind, "audio"))
                 global_is[i]->muted = 1;
         }  
-        if(!strcmp(kind, "all") || !strcmp(kind, "audio"))
-            global_is[channel_num]->muted = 0;
+        if(!strcmp(kind, "all") || !strcmp(kind, "audio")) {
+            global_is[channel_num]->muted = 0;          
+            av_log(NULL, AV_LOG_WARNING, "sound change\n");  
+        }
         if(!strcmp(kind, "all") || !strcmp(kind, "video")) {
             SDL_ShowWindow( window[channel_num]);                
             SDL_RaiseWindow( window[channel_num] );   
@@ -4890,7 +4893,7 @@ int main(int argc, char **argv)
             do_all_exit(global_is);
         }
         global_is[i]->idx_screen= i;
-        av_usleep(1000000);
+        av_usleep(1500000);
         //SDL_CreateThread(video_display_thread, "sub video display", is[i]);
     }
 
