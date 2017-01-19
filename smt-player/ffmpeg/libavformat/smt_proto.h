@@ -14,6 +14,10 @@
 #include "smt_signal.h"
 #endif
 
+//#define SMT_FEATURE_HEARTBEAT
+#define SMT_HEARTBEAT_MAX_GAP    30
+#define SMT_HEARTBEAT_ONE_GAP    10
+
 
 #define MTU 1452     //ip 20 + udp 8 + mtp 1452 = 1480      1500
 #define MAX_ASSET_NUMBER 10
@@ -303,6 +307,8 @@ long signalling_message_segment_append(signalling_message_buf_t *p_signalling_me
 int id_change(edit_list_t edit_list_id,int id_new,int mpu_new);
 int info_change(int id_new,int mpu_new);
 #endif
-
+#ifdef SMT_FEATURE_HEARTBEAT
+int smt_heartbeat_client_kick(const char* addr, int port);
+#endif
 #endif
 

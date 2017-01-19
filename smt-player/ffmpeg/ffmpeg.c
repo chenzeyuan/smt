@@ -37,6 +37,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <libavformat/smt_proto.h>
 
 
 #if HAVE_IO_H
@@ -215,11 +216,6 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
             sprintf(buffer+strlen(buffer), "%d", (int)ntohs(client_addr.sin_port));
             av_log(NULL, AV_LOG_WARNING, "[Result] SOURCE address is changed to %s\n", buffer);
             delete_address = av_strdup(buffer);
-
-            // Warning: server continue forwarding data to keep the session alive.
-            // it is necessary for hole punching. Otherwise, cliet will release the session too soon.
-            // As the result, do NOT erase this sleep() for 2 seconds.
-            //av_usleep(2000000);
         }
 
         // del RESET is the method to clean all the streams 
@@ -237,9 +233,20 @@ static int handle_command(char * command, struct sockaddr_in client_addr)
         added_address = pch;
         if(added_address != NULL) { 
             av_log(NULL, AV_LOG_WARNING, "[Result] address %s required to be ADDed\n", added_address);
-            printf("add");    
 
             // NAT punching
+#ifdef SMT_FEATURE_HEARTBEAT
+            // need to kick dog
+            if(strcmp(added_address, "SOURCE") == 0)
+            {
+                char address[100];
+                strcpy(address, inet_ntoa(client_addr.sin_addr));   
+                int addport = (int)ntohs(client_addr.sin_port);
+
+                if(smt_heartbeat_client_kick(address, addport))
+                    return 1;
+            }
+#endif
             if(strcmp(added_address, "SOURCE") == 0)
             {
                 char buffer[100];

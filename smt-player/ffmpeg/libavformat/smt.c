@@ -74,6 +74,9 @@ typedef struct SMTContext {
     char *sources;
     struct sockaddr_storage dest_addr[SMT_MAX_DELIVERY_NUM];
     int dest_addr_len[SMT_MAX_DELIVERY_NUM];
+#ifdef SMT_FEATURE_HEARTBEAT
+    int64_t dest_addr_live_time[SMT_MAX_DELIVERY_NUM];
+#endif
     struct sockaddr_storage local_addr_storage[SMT_MAX_DELIVERY_NUM];
 
     int fifo_size;
@@ -382,138 +385,20 @@ static float smt_calc_rate(struct SMT4AvLogExt *info, char *filename, int len, i
     return -1;
 }
 
-#define MAX_BPS  (25 * 1024 * 1024)
-#define MAX_DELAY (MTU * 8 * 1E6) / (500 * 1024)   // 500K bps     11077us
-#define MIN_DELAY (MTU * 8 * 1E6) / (25 * 1024 * 1024)  // 25M bps    443us
-#define DEFAUT_SMT_BITRATE (20 * 1024)      // unit is Kbps
-static void send_socket_cache(Queue *q) {
 
-    unsigned char* buf = NULL;
-    int ret;
-    int delay_time = 0; //
-    SMTContext *s = q->h->priv_data;
-    if(0 == smt_bitrate) smt_bitrate = DEFAUT_SMT_BITRATE;      
-    delay_time =(MTU * 8 * 1E6) / (smt_bitrate  * 1024 * 12 /10);
-    delay_time -= 100;  //subtract program processing time
-    delay_time  = delay_time>MAX_DELAY?MAX_DELAY:delay_time;       
-    delay_time  = delay_time<MIN_DELAY?MIN_DELAY:delay_time;       
-
-    while(1) {
-#ifdef SMT_NET_STATE
-        int len = smt_send_net_state(s, &buf);
-        if(len > 0) {
-            len = MTU;
-        }
-        else
+#ifdef SMT_FEATURE_HEARTBEAT
+int smt_heartbeat_client_kick(const char* addr, int port) {
+    for(int i = 1 ; i < smtContext->smt_fd_size; i++) {
+          struct sockaddr_in * dest_addr = (struct sockaddr_in *) &smtContext->dest_addr[i];    
+          if( (strcmp(inet_ntoa(dest_addr->sin_addr), addr) == 0) && 
+               (port == (int)ntohs(dest_addr->sin_port))) {
+               smtContext->dest_addr_live_time[i] = av_gettime();
+               return 1;
+          }
+    }
+    return 0;
+}
 #endif
-		{
-            len = Dequeue(q, &buf);
-        }
-        if(NULL == buf) continue;
-        for(int i = 0 ; i < s->smt_fd_size; i++) {
-            if (!s->is_connected) {
-                struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-                if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
-
-                if(server_socket_fd != -1) {
-                    ret = sendto (server_socket_fd, buf, len, 0,
-                            (struct sockaddr *) &s->dest_addr[i],
-                            s->dest_addr_len[i]);
-                }
-                else {
-                    ret = sendto (s->smt_fd[i], buf, len, 0,
-                            (struct sockaddr *) &s->dest_addr[i],
-                            s->dest_addr_len[i]);
-                }
-            } else {
-                if(s->smt_fd[i] == NULL) continue;
-                ret = send(s->smt_fd[i], buf, len, 0);
-            }
-            //smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
-            smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE);
-        }
-        av_usleep(delay_time);
-    }
-}
-
-
-
-
-void init_send_socket_cache() {
-    pthread_t send_socket_cache_thread;
-    send_socket_cache_thread= pthread_create(&send_socket_cache_thread, NULL, send_socket_cache, GetQueue());
-}
-
-static void set_socket_cache_queue(URLContext *h) {
-    Queue *q = GetQueue();
-    pthread_mutex_lock(&q->q_lock);
-    if(q->init_flag == 0) {
-        q->h = h;
-        init_send_socket_cache();
-        q->init_flag = 1;
-    }
-    pthread_mutex_unlock(&q->q_lock);
-}
-
-
-/* ----------------------------------------------*/
-
-#define SMT_OUTPUT_CACHE_CONTROL
-static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
-{
-    SMTContext *s = h->priv_data;
-    int ret;
-    int i;
-
-#ifdef SMT_OUTPUT_CACHE_CONTROL
-    set_socket_cache_queue(h);
-    void *data = malloc(len);
-    memcpy(data, buf, len);
-    Enqueue(data, len);
-#else
-    for(i = 0 ; i < s->smt_fd_size; i++) {
-        if (!s->is_connected) {
-            struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
-            //av_log(NULL, AV_LOG_WARNING, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
-            if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
-
-
-             // TODO: liminghao smt_fd[] is not used for hole punching
-            if(server_socket_fd != -1) {
-                ret = sendto (server_socket_fd, buf, len, 0,
-                              (struct sockaddr *) &s->dest_addr[i],
-                              s->dest_addr_len[i]);
-            }
-            else {
-                ret = sendto (s->smt_fd[i], buf, len, 0,
-                              (struct sockaddr *) &s->dest_addr[i],
-                              s->dest_addr_len[i]);
-            }
-                
-        } else {
-            if(s->smt_fd[i] == NULL) continue;
-            ret = send(s->smt_fd[i], buf, len, 0);
-        }
-        //smt_calc_rate(&info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
-        smt_calc_rate(&info_av_log_ext, h->filename, len, NUMBER_SIZE);
-    }
-    av_usleep(50);
-#endif
-    /*
-        switch(s->smt_fd_size) {
-            case 1:   av_usleep(100);  break;
-            case 2:   av_usleep(200);  break;
-            case 3:   av_usleep(300);  break;
-            case 4:   av_usleep(400);  break;
-            case 5:   av_usleep(500);  break;
-            default:
-                break;
-        } 
-        */
-    return ret < 0 ? ff_neterrno() : ret;
-
-}
-
 
 static void *smt_mpu_generate_task( void *_URLContext)
 {
@@ -761,10 +646,160 @@ int ff_smt_set_remote_url(URLContext *h, const char *uri)
         return AVERROR(EIO);
     }
     s->is_multicast[s->smt_fd_size] = ff_is_multicast_address((struct sockaddr*) &(s->dest_addr[s->smt_fd_size]));
-    
+
+#ifdef SMT_FEATURE_HEARTBEAT
+    s->dest_addr_live_time[s->smt_fd_size] = av_gettime();
+#endif
     return port;
 }
 
+#define MAX_BPS  (25 * 1024 * 1024)
+#define MAX_DELAY (MTU * 8 * 1E6) / (500 * 1024)   // 500K bps     11077us
+#define MIN_DELAY (MTU * 8 * 1E6) / (25 * 1024 * 1024)  // 25M bps    443us
+#define DEFAUT_SMT_BITRATE (20 * 1024)      // unit is Kbps
+
+
+static void send_socket_cache(Queue *q) {
+
+    unsigned char* buf = NULL;
+    int ret;
+    int delay_time = 0; //
+    SMTContext *s = q->h->priv_data;
+    if(0 == smt_bitrate) smt_bitrate = DEFAUT_SMT_BITRATE;      
+    delay_time =(MTU * 8 * 1E6) / (smt_bitrate  * 1024 * 12 /10);
+    delay_time -= 100;  //subtract program processing time
+    delay_time  = delay_time>MAX_DELAY?MAX_DELAY:delay_time;       
+    delay_time  = delay_time<MIN_DELAY?MIN_DELAY:delay_time;       
+
+    while(1) {
+#ifdef SMT_NET_STATE
+        int len = smt_send_net_state(s, &buf);
+        if(len > 0) {
+            len = MTU;
+        }
+        else
+#endif
+		{
+            len = Dequeue(q, &buf);
+        }
+        if(NULL == buf) continue;
+        for(int i = 0 ; i < s->smt_fd_size; i++) {
+            if (!s->is_connected) {
+                struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
+                if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
+
+#ifdef SMT_FEATURE_HEARTBEAT
+                if(i > 0 &&  av_gettime() - s->dest_addr_live_time[i] > SMT_HEARTBEAT_MAX_GAP * 1000000) {                       
+                        av_log(NULL, AV_LOG_WARNING, "[Warning] HEARTBEAT expired! It will be released!!\n");
+                        if (s->is_multicast[i]) 
+                            smt_leave_multicast_group(s->smt_fd[i], (struct sockaddr *)&s->dest_addr[i],(struct sockaddr *)&s->local_addr_storage[i]);
+                        closesocket(s->smt_fd[i]);
+                        for(int j = i+1; j < s->smt_fd_size; j++) {
+                            s->smt_fd[j-1] = s->smt_fd[j];
+                            s->dest_addr[j-1] = s->dest_addr[j];
+                            s->dest_addr_len[j-1] = s->dest_addr_len[j];
+                            s->local_addr_storage[j-1] = s->local_addr_storage[j];
+                         }
+                        s->smt_fd_size--;
+                        i--;
+                        continue;
+                }
+#endif
+                if(server_socket_fd != -1) {
+                    ret = sendto (server_socket_fd, buf, len, 0,
+                            (struct sockaddr *) &s->dest_addr[i],
+                            s->dest_addr_len[i]);
+                }
+                else {
+                    ret = sendto (s->smt_fd[i], buf, len, 0,
+                            (struct sockaddr *) &s->dest_addr[i],
+                            s->dest_addr_len[i]);
+                }
+            } else {
+                if(s->smt_fd[i] == NULL) continue;
+                ret = send(s->smt_fd[i], buf, len, 0);
+            }
+            //smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE * s->smt_fd_size);
+            smt_calc_rate(&info_av_log_ext, q->h->filename, len, NUMBER_SIZE);
+        }
+        av_usleep(delay_time);
+    }
+}
+
+void init_send_socket_cache() {
+    pthread_t send_socket_cache_thread;
+    send_socket_cache_thread= pthread_create(&send_socket_cache_thread, NULL, send_socket_cache, GetQueue());
+}
+
+static void set_socket_cache_queue(URLContext *h) {
+    Queue *q = GetQueue();
+    pthread_mutex_lock(&q->q_lock);
+    if(q->init_flag == 0) {
+        q->h = h;
+        init_send_socket_cache();
+        q->init_flag = 1;
+    }
+    pthread_mutex_unlock(&q->q_lock);
+}
+
+
+/* ----------------------------------------------*/
+
+#define SMT_OUTPUT_CACHE_CONTROL
+static int smt_on_packet_deliver(URLContext *h, unsigned char *buf, int len)
+{
+    SMTContext *s = h->priv_data;
+    int ret;
+    int i;
+
+#ifdef SMT_OUTPUT_CACHE_CONTROL
+    set_socket_cache_queue(h);
+    void *data = malloc(len);
+    memcpy(data, buf, len);
+    Enqueue(data, len);
+#else
+    for(i = 0 ; i < s->smt_fd_size; i++) {
+        if (!s->is_connected) {
+            struct sockaddr_in * dest_addr = (struct sockaddr_in *) &s->dest_addr[i];                
+            //av_log(NULL, AV_LOG_WARNING, "sending data to client %s:%d\n", inet_ntoa(dest_addr->sin_addr), ntohs(dest_addr->sin_port));
+            if(s->smt_fd[i] == NULL || ntohs(dest_addr->sin_port) == 1) continue;
+
+
+             // TODO: liminghao smt_fd[] is not used for hole punching
+            if(server_socket_fd != -1) {
+                ret = sendto (server_socket_fd, buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+            else {
+                ret = sendto (s->smt_fd[i], buf, len, 0,
+                              (struct sockaddr *) &s->dest_addr[i],
+                              s->dest_addr_len[i]);
+            }
+                
+        } else {
+            if(s->smt_fd[i] == NULL) continue;
+            ret = send(s->smt_fd[i], buf, len, 0);
+        }
+        //smt_calc_rate(&info_av_log_ext, h->filename, len, s->smt_fd_size * NUMBER_SIZE);
+        smt_calc_rate(&info_av_log_ext, h->filename, len, NUMBER_SIZE);
+    }
+    av_usleep(50);
+#endif
+    /*
+        switch(s->smt_fd_size) {
+            case 1:   av_usleep(100);  break;
+            case 2:   av_usleep(200);  break;
+            case 3:   av_usleep(300);  break;
+            case 4:   av_usleep(400);  break;
+            case 5:   av_usleep(500);  break;
+            default:
+                break;
+        } 
+        */
+    return ret < 0 ? ff_neterrno() : ret;
+
+}
 
 static int smt_open(URLContext *h, const char *uri, int flags)
 {
@@ -847,7 +882,10 @@ static int smt_open(URLContext *h, const char *uri, int flags)
 
     s->smt_fd[0] = smt_fd;
     s->smt_fd_size = 1;
-    
+#ifdef SMT_FEATURE_HEARTBEAT
+    s->dest_addr_live_time[0] = 0;
+#endif
+
     smtContext = s;
     smtH = h;
 
@@ -868,6 +906,8 @@ static int smt_open(URLContext *h, const char *uri, int flags)
     memset(s->begin_time, 0, SMT_MAX_PACKED_NUM * sizeof(int64_t));
     memset(s->mpu_lost_counter, 0, SMT_MAX_PACKED_NUM * sizeof(int64_t));
     memset(s->mpu_sequence_number, 0xFF, SMT_MAX_PACKED_NUM * sizeof(int64_t));
+
+
 
     ret = pthread_mutex_init(&s->mutex, NULL);
     if (ret != 0) {
@@ -905,6 +945,18 @@ static int smt_read(URLContext *h, uint8_t *buf, int size)
     
     if(!s->audio_head_available || !s->video_head_available)
         return SMT_DATA_NOT_READY;
+
+#ifdef SMT_FEATURE_HEARTBEAT
+        if(s->dest_addr_live_time[0] == 0) {
+            s->dest_addr_live_time[0] = av_gettime();
+        }
+        else if(s->remote_server) {
+            if(av_gettime() - s->dest_addr_live_time[0] > SMT_HEARTBEAT_ONE_GAP * 1000000) {
+                inform_server_add(s->remote_server, s->smt_fd[0]);
+                s->dest_addr_live_time[0] = av_gettime();
+            }
+        }
+#endif
 
     if(!s->hflag){
         avail = av_fifo_size(s->head);
